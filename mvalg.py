@@ -36,17 +36,18 @@ def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 
 	# initialize with random values
 	pzcx_v1 = rs.rand(nz,nx1)
-	pzcx_v1 /= np.sum(pzcx_v1,0)
+	pzcx_v1 /= np.sum(pzcx_v1,axis=0)
 	
 	pzcx_v2 = rs.rand(nz,nx2)
-	pzcx_v2 /= np.sum(pzcx_v2,0)
+	pzcx_v2 /= np.sum(pzcx_v2,axis=0)
 
 	# augmented variables
+	# FIXME: Can use averaging as a initial point
 	pz = rs.rand(nz)
 	pz /= np.sum(pz)
 
 	pzcy = rs.rand(nz,ny)
-	pzcy /= np.sum(pzcy,0)
+	pzcy /= np.sum(pzcy,axis=0)
 
 	# dual variables
 	dz_v1 = np.zeros(nz)
@@ -110,10 +111,10 @@ def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 		dzcy_v1 = dzcy_v1 + pen_coeff*err_zcy_v1
 		dzcy_v2 = dzcy_v2 + pen_coeff*err_zcy_v2
 		# convergence criterion
-		conv_z_v1   = np.sum(np.fabs(err_z_v1))<convthres
-		conv_z_v2   = np.sum(np.fabs(err_z_v2))<convthres
-		conv_zcy_v1 = np.all(np.sum(np.fabs(err_zcy_v1),axis=0)<convthres)
-		conv_zcy_v2 = np.all(np.sum(np.fabs(err_zcy_v2),axis=0)<convthres)
+		conv_z_v1   = 0.5*np.sum(np.fabs(err_z_v1))<convthres
+		conv_z_v2   = 0.5*np.sum(np.fabs(err_z_v2))<convthres
+		conv_zcy_v1 = np.all(0.5*np.sum(np.fabs(err_zcy_v1),axis=0)<convthres)
+		conv_zcy_v2 = np.all(0.5*np.sum(np.fabs(err_zcy_v2),axis=0)<convthres)
 		if conv_z_v1 and conv_z_v2 and conv_zcy_v1 and conv_zcy_v2:
 			flag_conv = True
 			break
@@ -197,8 +198,8 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 		dzcy_list=[ item + pen_coeff*(errzcy_list[idx]) for idx,item in enumerate(dzcy_list)]
 
 		# convergence criterion
-		conv_z_list = [np.sum(np.fabs(item))<convthres for item in errz_list]
-		conv_zcy_list = [np.all(np.sum(np.fabs(item),axis=0))<convthres for item in errzcy_list]
+		conv_z_list = [0.5*np.sum(np.fabs(item))<convthres for item in errz_list]
+		conv_zcy_list = [np.all(0.5*np.sum(np.fabs(item),axis=0))<convthres for item in errzcy_list]
 		if np.all(np.array(conv_z_list)) and np.all(np.array(conv_zcy_list)):
 			flag_conv = True
 			break
@@ -206,4 +207,12 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 		pzcx_list = new_pzcx_list
 		pz = new_pz
 		pzcy = new_pzcy
+	'''
+	errz_list  = [new_pz - item@px_list[idx] for idx,item in enumerate(new_pzcx_list)]
+	errzcy_list= [new_pzcy- item@pxcy_list[idx] for idx,item in enumerate(new_pzcx_list)]
+	print('zlist_conv:')
+	print(errz_list)
+	print('zylist_conv:')
+	print(errzcy_list)
+	'''
 	return {'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv}
