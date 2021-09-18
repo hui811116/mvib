@@ -4,7 +4,7 @@ import mvutils as ut
 import copy
 from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
-
+import sys
 
 def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	assert len(pxy_list) == 2
@@ -43,10 +43,10 @@ def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 
 	# augmented variables
 	# FIXME: Can use averaging as a initial point
-	pz = rs.rand(nz)
+	pz = 0.5 * (pzcx_v1@px_v1 + pzcx_v2@px_v2)
 	pz /= np.sum(pz)
 
-	pzcy = rs.rand(nz,ny)
+	pzcy = 0.5 *(pzcx_v1@pxcy_v1 + pzcx_v2@pxcy_v2)
 	pzcy /= np.sum(pzcy,axis=0)
 
 	# dual variables
@@ -143,9 +143,9 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	pzcx_list = [rs.rand(nz,i.shape[0]) for i in pxy_list]
 	# normalization
 	pzcx_list = [i/np.sum(i,axis=0) for i in pzcx_list]
-	pz = rs.rand(nz)
+	pz = 1.0/nview*sum([pzcx_list[i]@px_list[i] for i in range(nview)])
 	pz /= np.sum(pz)
-	pzcy = rs.rand(nz,ny)
+	pzcy = 1.0/nview*sum([pzcx_list[i]@pxcy_list[i] for i in range(nview)])
 	pzcy /= np.sum(pzcy,axis=0)
 	# init:dual var
 	dz_list = [np.zeros(nz) for i in range(nview)]
@@ -185,7 +185,7 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 			break
 		new_pz = pz -ss_z * mean_grad_pz
 		grad_pzcy = gobj_pzcy(new_pzcx_list,pzcy,dzcy_list)
-		mean_grad_pzcy = grad_pzcy - np.mean(grad_pzcy,axis=0)
+		mean_grad_pzcy = grad_pzcy - np.mean(grad_pzcy,axis=0)[None,:]
 		ss_zcy = gd.naiveStepSize(pzcy,-mean_grad_pzcy,gd_ss_init,gd_ss_scale)
 		if ss_zcy == 0:
 			break
@@ -196,10 +196,9 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 		errzcy_list= [new_pzcy- item@pxcy_list[idx] for idx,item in enumerate(new_pzcx_list)]
 		dz_list = [ item + pen_coeff*(errz_list[idx]) for idx,item in enumerate(dz_list)]
 		dzcy_list=[ item + pen_coeff*(errzcy_list[idx]) for idx,item in enumerate(dzcy_list)]
-
 		# convergence criterion
 		conv_z_list = [0.5*np.sum(np.fabs(item))<convthres for item in errz_list]
-		conv_zcy_list = [np.all(0.5*np.sum(np.fabs(item),axis=0))<convthres for item in errzcy_list]
+		conv_zcy_list = [0.5*np.sum(np.fabs(item),axis=0)<convthres for item in errzcy_list]
 		if np.all(np.array(conv_z_list)) and np.all(np.array(conv_zcy_list)):
 			flag_conv = True
 			break
