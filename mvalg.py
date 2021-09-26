@@ -6,6 +6,7 @@ from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
 import sys
 
+'''
 def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	assert len(pxy_list) == 2
 	pxy1 = pxy_list[0]
@@ -124,6 +125,7 @@ def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 		pz = new_pz
 		pzcy = new_pzcy
 	return {'pzcx_list':[pzcx_v1,pzcx_v2],'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv}
+'''
 
 # A general n view ADMM IB
 def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
@@ -146,7 +148,7 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	pz = 1.0/nview*sum([pzcx_list[i]@px_list[i] for i in range(nview)])
 	pz /= np.sum(pz)
 	pzcy = 1.0/nview*sum([pzcx_list[i]@pxcy_list[i] for i in range(nview)])
-	pzcy /= np.sum(pzcy,axis=0)
+	pzcy /= np.sum(pzcy,axis=0)[None,:]
 	# init:dual var
 	dz_list = [np.zeros(nz) for i in range(nview)]
 	dzcy_list = [np.zeros((nz,ny)) for i in range(nview)]
@@ -168,31 +170,61 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 
 		# FIXME: this part actually can be parallelly computed
 		# TODO: understand python parallelism. Multprocessing?
+		_ss_interrupt = False
 		new_pzcx_list = [np.zeros((nz,i.shape[0])) for i in pxy_list]
 		for i in range(nview):
 			tmp_grad_pzcx = gobj_pzcx_list[i](pzcx_list[i],pz,pzcy,dz_list[i],dzcy_list[i])
-			mean_tmp_grad_pzcx = tmp_grad_pzcx - np.mean(tmp_grad_pzcx,axis=0)
+			mean_tmp_grad_pzcx = tmp_grad_pzcx - np.mean(tmp_grad_pzcx,axis=0)[None,:]
 			tmp_ss_pzcx = gd.naiveStepSize(pzcx_list[i],-mean_tmp_grad_pzcx,gd_ss_init,gd_ss_scale)
 			if tmp_ss_pzcx==0:
+				_ss_interrupt = True
 				break
 			# TODO: Armijo stepsize update
+			'''
+			tmp_ss_pzcx = gd.armijoStepSize(pzcx_list[i],-mean_tmp_grad_pzcx,tmp_ss_pzcx,gd_ss_scale,1e-4,\
+								fobj_pzcx_list[i],gobj_pzcx_list[i],\
+								**{'pz':pz,'pzcy':pzcy,'mu_z':dz_list[i],'mu_zcy':dzcy_list[i]})
+			if tmp_ss_pzcx==0:
+				_ss_interrupt = True
+				break
+			'''
 			new_pzcx_list[i] = pzcx_list[i] -tmp_ss_pzcx * mean_tmp_grad_pzcx
+
+		if _ss_interrupt:
+			break
 		# update the augmented var
-		grad_pz = gobj_pz(new_pzcx_list,pz,dz_list)
+		grad_pz = gobj_pz(pz,new_pzcx_list,dz_list)
 		mean_grad_pz = grad_pz - np.mean(grad_pz)
 		ss_z = gd.naiveStepSize(pz,-mean_grad_pz,gd_ss_init,gd_ss_scale)
 		if ss_z == 0:
 			break
-		new_pz = pz -ss_z * mean_grad_pz
-		grad_pzcy = gobj_pzcy(new_pzcx_list,pzcy,dzcy_list)
+		'''
+		# armijo condition
+		ss_z = gd.armijoStepSize(pz,-mean_grad_pz,gd_ss_init,gd_ss_scale,1e-4,fobj_pz,gobj_pz,\
+					**{'pzcx_list':new_pzcx_list,'muz_list':dz_list})
+		if ss_z == 0:
+			break
+		'''
+		grad_pzcy = gobj_pzcy(pzcy,new_pzcx_list,dzcy_list)
 		mean_grad_pzcy = grad_pzcy - np.mean(grad_pzcy,axis=0)[None,:]
 		ss_zcy = gd.naiveStepSize(pzcy,-mean_grad_pzcy,gd_ss_init,gd_ss_scale)
 		if ss_zcy == 0:
 			break
-		new_pzcy = pzcy - mean_grad_pzcy * ss_zcy
+		# armijo condition
+		'''
+		ss_zcy = gd.armijoStepSize(pzcy,-mean_grad_pzcy,gd_ss_init,gd_ss_scale,1e-4,fobj_pzcy,gobj_pzcy,\
+					**{'pzcx_list':new_pzcx_list,'muzcy_list':dzcy_list})
+		if ss_zcy == 0:
+			break
+		'''
+		# NOTE: the two augmented variables should be updated together
+		ss_zzcy = min(ss_z,ss_zcy)
+		new_pz = pz -ss_zzcy * mean_grad_pz
+		new_pzcy = pzcy - mean_grad_pzcy * ss_zzcy
+		
 		# update the dual variables
 		# first, calculate the errors
-		errz_list  = [new_pz - item@px_list[idx] for idx,item in enumerate(new_pzcx_list)]
+		errz_list  = [new_pz - np.sum(item*(px_list[idx])[None,:],axis=1) for idx,item in enumerate(new_pzcx_list)]
 		errzcy_list= [new_pzcy- item@pxcy_list[idx] for idx,item in enumerate(new_pzcx_list)]
 		dz_list = [ item + pen_coeff*(errz_list[idx]) for idx,item in enumerate(dz_list)]
 		dzcy_list=[ item + pen_coeff*(errzcy_list[idx]) for idx,item in enumerate(dzcy_list)]
@@ -215,3 +247,61 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	print(errzcy_list)
 	'''
 	return {'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv}
+
+
+
+# compared algorithms
+'''
+def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):
+	(nx,ny) = pxy.shape
+	nz = qlevel
+	px = np.sum(pxy,axis=1)
+	py = np.sum(pxy,axis=0)
+	pycx = np.transpose(np.diag(1./px)@pxy)
+	pxcy = pxy@np.diag(1./py)
+	# on IB, the initialization matters
+	# use random start (*This is the one used for v2)
+	sel_idx = np.random.permutation(nx)
+	pz = px[sel_idx[:qlevel]]
+	pz /= np.sum(pz)
+	pzcx = np.random.rand(nz,nx)
+	pzcx = pzcx * (1./np.sum(pzcx,axis=0))[None,:]
+	pzcx[:nz,:] = pycx
+	pycz = pycx@ np.transpose(1/pz[:,None]*pzcx*px[None,:])
+	
+	# use random start
+	#sel_idx = np.random.permutation(nx)
+	#pycz = pycx[:,sel_idx[:qlevel]]
+	#pz = px[sel_idx[:qlevel]]
+	#pz /= np.sum(pz)
+	#pzcx = np.ones((nz,nx))/nz
+	
+	# ready to start
+	itcnt = 0
+	while itcnt<max_iter:
+		# compute ib kernel
+		new_pzcx= np.zeros((nz,nx))
+		kl_oprod = np.expand_dims(1./pycz,axis=-1)@np.expand_dims(pycx,axis=1)
+		kl_ker = np.sum(np.repeat(np.expand_dims(pycx,axis=1),nz,axis=1)*np.log(kl_oprod),axis=0)
+		new_pzcx = np.diag(pz)@np.exp(-beta*kl_ker)
+
+		# standard way, normalize to be valid probability.
+		new_pzcx = new_pzcx@np.diag(1./np.sum(new_pzcx,axis=0))
+		itcnt+=1
+		# total variation convergence criterion
+		diff = 0.5* np.sum(np.fabs(new_pzcx-pzcx))
+		if diff < conv_thres:
+			# reaching convergence
+			break
+		else:
+			# update other probabilities
+			pzcx = new_pzcx
+			# NOTE: should use last step? or the updated one?
+			pz = pzcx@px
+			pzcy = pzcx@pxcy
+			pycz = np.transpose(np.diag(1./pz)@pzcy@np.diag(py))
+	# monitoring the MIXZ, MIYZ
+	mixz = calc_mi(pzcx,px)
+	miyz = calc_mi(pycz,pz)
+	return {'prob_zcx':pzcx,'prob_ycz':pycz,'niter':itcnt,'IXZ':mixz,'IYZ':miyz,'valid':True}
+'''

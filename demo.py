@@ -8,6 +8,8 @@ import mvdataset as da
 import mvalg as alg
 import mvgrad as gd
 import mvutils as ut
+import matplotlib.pyplot as plt
+import pprint
 
 # this demo consider a simple two-view scenario
 
@@ -16,12 +18,12 @@ d_base = os.getcwd()
 parser = argparse.ArgumentParser()
 parser.add_argument('-thres',type=float,help='Convergence threshold',default=1e-5)
 parser.add_argument('-seed',type=int,help='Random Seed for Reproduction',default=None)
-parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=10000)
-parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default=160.0)
-parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=1e-3)
+parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=20000)
+parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default=4.0)
+parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=1e-2)
 parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.10)
 parser.add_argument('-dataset',type=str,help='The dataset for simulation',default="syn2")
-parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.4,0.4")
+parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.1,0.08")
 parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=25)
 
 # MACRO for Developing
@@ -41,8 +43,12 @@ sys_param = {
 }
 
 # running range
-pxy_list = data_dict['pxy_list']
-alg_args = {
+pxy_list  = data_dict['pxy_list']
+mixy_list = [ut.calcMI(item) for item in pxy_list]
+px_list   = [np.sum(item,axis=1) for item in pxy_list]
+py_list   = [np.sum(item,axis=0) for item in pxy_list] #NOTE: right now, py is assumed to be the same over all views
+py        = py_list[0]
+alg_args  = {
 	'pxy_list' : pxy_list,
 	'gamma_vec': gamma_vec,
 	'nz':data_dict['nz'],
@@ -52,4 +58,9 @@ alg_args = {
 #algout = alg.mvib_2v(**{**alg_args,**sys_param})
 #print(algout)
 algout = alg.mvib_nv(**{**alg_args,**sys_param})
-print(algout)
+#print(algout)
+# calculate mizx for each view
+mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
+mizy = ut.calcMI(algout['pzcy'] *py[None,:])
+
+pprint.pprint({'IXY_list':mixy_list,'IZX_list':mizx_list,'IZY':mizy,'converged':algout['conv'],'num_iter':algout['niter']})

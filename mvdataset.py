@@ -4,6 +4,8 @@ import sys
 def select(name):
 	if name == 'syn2':
 		return synTwoView()
+	elif name == 'syn1':
+		return synOneView()
 	else:
 		sys.exit('[DATASET ERROR] No dataset named "{}" found.'.format(name))
 
@@ -18,3 +20,10 @@ def synTwoView():
 	pxy_v1 = pxcy_v1 * py[None,:]
 	pxy_v2 = pxcy_v2 * py[None,:]
 	return {'pxy_list':[pxy_v1,pxy_v2],'ny':len(py),'nz':len(py)}
+
+def synOneView():
+	py = np.array([0.5,0.5])
+	pxcy = np.array([[0.9, 0.1],
+					 [0.1, 0.9]])
+	pxy  = pxcy * py[None,:]
+	return {'pxy_list':[pxy],'ny':len(py),'nz':len(py)}

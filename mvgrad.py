@@ -7,18 +7,18 @@ import sys
 
 def funcPzcxObj(gamma,px,pxcy,pcoeff):
 	def valObj(pzcx,pz,pzcy,mu_z,mu_zcy):
-		err_z = pz-pzcx @ px
+		err_z = pz-np.sum(pzcx * px[None,:],axis=1)
 		err_zcy=pzcy -pzcx@pxcy
 		return -gamma * ut.calcCondEnt(pzcx,px)+np.sum(mu_z*err_z)+np.linalg.norm(err_z,2)**2 \
-				+np.sum(mu_zcy,err_zcy)+np.linalg.norm(err_zcy,2)**2
+				+np.sum(mu_zcy*err_zcy)+np.linalg.norm(err_zcy,2)**2
 	return valObj
 
 def gradPzcxObj(gamma,px,pxcy,pcoeff):
 	# note: this returns the raw gradient. might need additional processing to assure a probability dist.
 	def gradObj(pzcx,pz,pzcy,mu_z,mu_zcy):
-		err = pz - pzcx @ px
+		err = pz - np.sum(pzcx * px[None,:],axis=1)
 		errzy = pzcy - pzcx @ pxcy
-		grad = gamma * (np.log(pzcx)+1)*px[None,:]-(mu_z+pcoeff*err)[:,None]@px[None,:]\
+		grad = gamma * (np.log(pzcx)+1)*px[None,:]-(mu_z+pcoeff*err)[:,None]*px[None,:]\
 				-(mu_zcy+pcoeff*(errzy))@pxcy.T
 		return grad
 	return gradObj
@@ -50,35 +50,33 @@ def gradQObj(gamma_vec,px_list,pxcy_list,pcoeff):
 '''
 # NOTE: the following returns Pz func, grad separately
 def funcPzObj(gamma_vec,px_list,pcoeff):
-	def valObj(pzcx_list,pz,muz_list):
-		errz_list = [pz-pzcx_list[i]@px_list[i] for i in range(len(px_list))]
+	def valObj(pz,pzcx_list,muz_list):
+		errz_list = [pz-np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1) for i in range(len(px_list))]
 		errznorm2 = sum([np.linalg.norm(i,2)**2 for i in errz_list])
 		errzddot  = sum([np.dot(muz_list[i],errz_list[i]) for i in range(len(px_list))])
 		return (-1+np.sum(gamma_vec))*ut.calcEnt(pz)+errzddot+0.5*pcoeff*errznorm2
 	return valObj
 
 def gradPzObj(gamma_vec,px_list,pcoeff):
-	def gradObj(pzcx_list,pz,muz_list):
-		#print('debugging')
-		#print(muz_list)
+	def gradObj(pz,pzcx_list,muz_list):
 		#print(sum(muz_list))                # this is correct
 		#print(np.sum(np.array(muz_list),0)) # this is correct
 		#print(np.sum(np.array(muz_list),1)) # this is wrong
-		errz_list = np.array([pz-pzcx_list[i]@px_list[i] for i in range(len(px_list))])
-		return (1-np.sum(gamma_vec))*(np.log(pz)+1)+np.sum(muz_list,0)+pcoeff*sum(errz_list)
+		errz_list = [pz-np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1) for i in range(len(px_list))]
+		return (1-np.sum(gamma_vec))*(np.log(pz)+1)+sum(muz_list)+pcoeff*sum(errz_list)
 	return gradObj
 # NOTE: the following returns Pz|y func, grad separately
 def funcPzcyObj(pxcy_list,py,pcoeff):
-	def funcObj(pzcx_list,pzcy,muzcy_list):
-		errzcy_list = np.array([pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))])
-		errzcynorm2 = np.sum(np.array([np.linalg.norm(i,2)**2 for i in errzcy_list]))
-		errzcyddot = np.sum(np.array([np.sum(muzcy_list[i]*errzcy_list[i]) for i in range(len(pxcy_list))]))
+	def funcObj(pzcy,pzcx_list,muzcy_list):
+		errzcy_list = [pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))]
+		errzcynorm2 = sum([np.linalg.norm(i,2)**2 for i in errzcy_list])
+		errzcyddot = sum([np.sum(muzcy_list[i]*errzcy_list[i]) for i in range(len(pxcy_list))])
 		return ut.calcCondEnt(pzcy,py)+errzcyddot+0.5*pcoeff*errzcynorm2
 	return funcObj
 def gradPzcyObj(pxcy_list,py,pcoeff):
-	def gradObj(pzcx_list,pzcy,muzcy_list):
-		errzcy_list = np.array([pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))])
-		return -(np.log(pzcy)+1)*py[None,:]+np.sum(np.array(muzcy_list),0)+pcoeff*np.sum(errzcy_list,0)
+	def gradObj(pzcy,pzcx_list,muzcy_list):
+		errzcy_list = [pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))]
+		return -(np.log(pzcy)+1)*py[None,:]+sum(muzcy_list)+pcoeff*sum(errzcy_list)
 	return gradObj
 
 # implement the naive step size search algorithm
