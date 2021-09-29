@@ -25,11 +25,12 @@ parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default
 parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=1e-2)
 parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.25)
 parser.add_argument('-dataset',type=str,help='The dataset for simulation',default="syn2")
-parser.add_argument('-gamma_min',type=float,help="the minimum gamma for grid search",default=0.01)
-parser.add_argument('-gamma_max',type=float,help="the maximum gamma for grid search",default=0.5)
+parser.add_argument('-gamma_min',type=float,help="the minimum gamma for grid search",default=0.05)
+parser.add_argument('-gamma_max',type=float,help="the maximum gamma for grid search",default=0.66)
 parser.add_argument('-ngamma',type=int,help="Spacing of the gamma grid",default=20)
 parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=25)
-parser.add_argument('-v',"--verbose",help='printing the log and parameters along the execution',action='count',default=0)
+parser.add_argument('-v',"--verbose",help='Printing the log and parameters along the execution',action='count',default=0)
+parser.add_argument('-p',"--parallel",help='Solve with multiprocessing unit',action='count',default=0)
 
 # MACRO for Developing
 argsdict = vars(parser.parse_args())
@@ -52,6 +53,10 @@ sys_param = {
 
 if argsdict.get('verbose',False):
 	pprint.pprint(sys_param)
+
+mvib_alg = alg.select("nview")
+if argsdict.get('parallel',False):
+	mvib_alg = alg.select("nview-parallel")
 
 # running range
 pxy_list  = data_dict['pxy_list']
@@ -81,6 +86,7 @@ for gi1,ga1 in enumerate(ga_axis1):
 			pstring = 'Current Progress: gamma1={:5.3f},gamma2={:5.3f}---iteration({:>5d}/{:>5d})---time elapsed: {:>16.4f} seconds'.format(ga1,ga2,ni,niter,time.time()-run_start)
 			print(spformat.format(pstring),end='\r',flush=True)
 			algout = alg.mvib_nv(**{**alg_args,**sys_param,'gamma_vec':gamma_vec})
+			algout = alg.mvib_nv_parallel(**{**alg_args,**sys_param,'gamma_vec':gamma_vec})
 			cnt_conv += int(algout['conv'])
 			tmp_pzcxlist = [ut.calcMI(item * px_list[idx][None,:]) for idx,item in enumerate(algout['pzcx_list'])]
 			tmp_mizy = ut.calcMI(algout['pzcy']*py[None,:])

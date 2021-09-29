@@ -38,10 +38,12 @@ ds = data_all.shape
 data_2d = data_all.reshape((np.prod(ds[:-1]),ds[-1]))
 fig = plt.figure()
 ax = fig.add_subplot(projection='3d')
-ax.scatter(data_2d[:,2],data_2d[:,3],data_2d[:,4])
+sel_idx = data_2d[:,5]==1
+ax.scatter(data_2d[sel_idx,2],data_2d[sel_idx,3],data_2d[sel_idx,4])
 ax.set_xlabel(r'$I(Z;X^{(1)})$ (nats)')
 ax.set_ylabel(r'$I(Z;X^{(2)})$ (nats)')
 ax.set_zlabel(r'$I(Z;Y)$ (nats)')
+plt.tight_layout()
 plt.show()
 
 
@@ -51,4 +53,5 @@ ax.scatter(data_2d[:,0],data_2d[:,1],100*data_2d[:,5])
 ax.set_xlabel(r'$\gamma_1$')
 ax.set_ylabel(r'$\gamma_2$')
 ax.set_zlabel(r'Convergent cases (\%)')
+plt.tight_layout()
 plt.show()

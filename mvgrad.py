@@ -4,7 +4,20 @@ import sys
 
 
 # implemented as gradient descent algorithms
+# direct calculation of the value for parallel computing
+def funcPzcxCalc(gamma,px,pxcy,pcoeff,pzcx,pz,pzcy,mu_z,mu_zcy):
+	err_z = pz-np.sum(pzcx * px[None,:],axis=1)
+	err_zcy=pzcy -pzcx@pxcy
+	return -gamma * ut.calcCondEnt(pzcx,px)+np.sum(mu_z*err_z)+np.linalg.norm(err_z,2)**2 \
+			+np.sum(mu_zcy*err_zcy)+np.linalg.norm(err_zcy,2)**2
+def gradPzcxCalc(gamma,px,pxcy,pcoeff,pzcx,pz,pzcy,mu_z,mu_zcy):
+	err = pz - np.sum(pzcx * px[None,:],axis=1)
+	errzy = pzcy - pzcx @ pxcy
+	grad = gamma * (np.log(pzcx)+1)*px[None,:]-(mu_z+pcoeff*err)[:,None]*px[None,:]\
+			-(mu_zcy+pcoeff*(errzy))@pxcy.T
+	return grad
 
+# Object version of the function value and gradients
 def funcPzcxObj(gamma,px,pxcy,pcoeff):
 	def valObj(pzcx,pz,pzcy,mu_z,mu_zcy):
 		err_z = pz-np.sum(pzcx * px[None,:],axis=1)
