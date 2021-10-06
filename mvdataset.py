@@ -23,7 +23,7 @@ def synTwoView():
 
 def synOneView():
 	py = np.array([0.5,0.5])
-	pxcy = np.array([[0.9, 0.1],
-					 [0.1, 0.9]])
+	pxcy = np.array([[0.85, 0.15],
+					 [0.15, 0.85]])
 	pxy  = pxcy * py[None,:]
 	return {'pxy_list':[pxy],'ny':len(py),'nz':len(py)}

@@ -16,6 +16,7 @@ import pprint
 d_base = os.getcwd()
 
 parser = argparse.ArgumentParser()
+parser.add_argument('method',type=str,choices=alg.availableAlgs(),help="select the method")
 parser.add_argument('-thres',type=float,help='Convergence threshold',default=1e-5)
 parser.add_argument('-seed',type=int,help='Random Seed for Reproduction',default=None)
 parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=20000)
@@ -55,9 +56,10 @@ alg_args  = {
 	'convthres':argsdict['thres'],
 	'maxiter':argsdict['maxiter'],
 }
-#algout = alg.mvib_2v(**{**alg_args,**sys_param})
-#print(algout)
-algout = alg.mvib_nv(**{**alg_args,**sys_param})
+
+algsel = alg.select(argsdict['method'])
+algout = algsel(**{**alg_args,**sys_param})
+#algout = alg.mvib_nv(**{**alg_args,**sys_param})
 #print(algout)
 # calculate mizx for each view
 mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
