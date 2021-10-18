@@ -67,6 +67,7 @@ else:
 		"nze_vec":np.array([item.shape[0] for item in pxy_list]),
 	}
 	algout = algsel(**{**alg_args,**sys_param,**cmpl_param})
+	pprint.pprint(algout)
 # calculate mizx for each view
 mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
 mizy = ut.calcMI(algout['pzcy'] *py[None,:])

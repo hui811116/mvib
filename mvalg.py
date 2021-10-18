@@ -427,7 +427,6 @@ def mvib_nv_cc(pxy_list,gamma_vec,gamma_cmpl,nzc,nze_vec,convthres,maxiter,**kwa
 	# initialize with summing the random point in complement view
 	# p common
 	pzcx_list = [np.sum(tt,axis=0) for tt in pzeccx_list]
-
 	# q common
 	pz_cmon = 1/nview * sum([pzcx_list[i]@px_list[i] for i in range(nview)])
 	pz_cmon /= np.sum(pz_cmon)
@@ -436,7 +435,6 @@ def mvib_nv_cc(pxy_list,gamma_vec,gamma_cmpl,nzc,nze_vec,convthres,maxiter,**kwa
 	# q complement
 	pzec_list = [tt@px_list[i] for i,tt in enumerate(pzeccx_list)]
 	pzeccy_list = [tt@pxcy_list[i] for i,tt in enumerate(pzeccx_list)]
-	
 	# dual variable
 	dz_list = [np.zeros(nzc) for i in range(nview)]
 	dzcy_list = [np.zeros((nzc,ny)) for i in range(nview)]
