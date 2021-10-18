@@ -22,9 +22,9 @@ parser.add_argument('-seed',type=int,help='Random Seed for Reproduction',default
 parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=20000)
 parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default=4.0)
 parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=1e-2)
-parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.10)
+parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.125)
 parser.add_argument('-dataset',type=str,help='The dataset for simulation',default="syn2")
-parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.1,0.08")
+parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.08,0.05")
 parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=25)
 
 # MACRO for Developing
@@ -56,11 +56,17 @@ alg_args  = {
 	'convthres':argsdict['thres'],
 	'maxiter':argsdict['maxiter'],
 }
-
 algsel = alg.select(argsdict['method'])
-algout = algsel(**{**alg_args,**sys_param})
-#algout = alg.mvib_nv(**{**alg_args,**sys_param})
-#print(algout)
+if argsdict['method'] != "complement":
+	algout = algsel(**{**alg_args,**sys_param})
+else:
+	cmpl_param = {
+		"gamma_cmpl": gamma_vec[0],
+		"nzc": data_dict['nz'],
+		#"nze_vec":np.array([data_dict['nz']]*len(pxy_list)),   #FIXME: right now the same as nzc for basic result guarantee
+		"nze_vec":np.array([item.shape[0] for item in pxy_list]),
+	}
+	algout = algsel(**{**alg_args,**sys_param,**cmpl_param})
 # calculate mizx for each view
 mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
 mizy = ut.calcMI(algout['pzcy'] *py[None,:])

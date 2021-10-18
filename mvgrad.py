@@ -4,19 +4,6 @@ import sys
 
 
 # implemented as gradient descent algorithms
-# direct calculation of the value for parallel computing
-def funcPzcxCalc(gamma,px,pxcy,pcoeff,pzcx,pz,pzcy,mu_z,mu_zcy):
-	err_z = pz-np.sum(pzcx * px[None,:],axis=1)
-	err_zcy=pzcy -pzcx@pxcy
-	return -gamma * ut.calcCondEnt(pzcx,px)+np.sum(mu_z*err_z)+np.linalg.norm(err_z,2)**2 \
-			+np.sum(mu_zcy*err_zcy)+np.linalg.norm(err_zcy,2)**2
-def gradPzcxCalc(gamma,px,pxcy,pcoeff,pzcx,pz,pzcy,mu_z,mu_zcy):
-	err = pz - np.sum(pzcx * px[None,:],axis=1)
-	errzy = pzcy - pzcx @ pxcy
-	grad = gamma * (np.log(pzcx)+1)*px[None,:]-(mu_z+pcoeff*err)[:,None]*px[None,:]\
-			-(mu_zcy+pcoeff*(errzy))@pxcy.T
-	return grad
-
 # Object version of the function value and gradients
 def funcPzcxObj(gamma,px,pxcy,pcoeff):
 	def valObj(pzcx,pz,pzcy,mu_z,mu_zcy):
@@ -72,9 +59,6 @@ def funcPzObj(gamma_vec,px_list,pcoeff):
 
 def gradPzObj(gamma_vec,px_list,pcoeff):
 	def gradObj(pz,pzcx_list,muz_list):
-		#print(sum(muz_list))                # this is correct
-		#print(np.sum(np.array(muz_list),0)) # this is correct
-		#print(np.sum(np.array(muz_list),1)) # this is wrong
 		errz_list = [pz-np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1) for i in range(len(px_list))]
 		return (1-np.sum(gamma_vec))*(np.log(pz)+1)+sum(muz_list)+pcoeff*sum(errz_list)
 	return gradObj
@@ -90,6 +74,65 @@ def gradPzcyObj(pxcy_list,py,pcoeff):
 	def gradObj(pzcy,pzcx_list,muzcy_list):
 		errzcy_list = [pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))]
 		return -(np.log(pzcy)+1)*py[None,:]+sum(muzcy_list)+pcoeff*sum(errzcy_list)
+	return gradObj
+
+# common-complement gradients
+# NOTE: the complement penalty contains augmented variables for the common representation
+#       and therefore introces extra proximal terms. Should be careful in handling the tensor gradients.
+# the Comn stands for the common information
+# the Cmpl stands for the complement information
+
+# NOTE: should involve complement view as well
+def gradPzcxComnObj(gamma,px,pxcy,pcoeff):
+	def gradObj(pzcx,pz,pzcy,pzeccx,pzec,pzeccy,mu_z,mu_zcy,mu_zeccx,mu_zec,mu_zeccy):
+		errz = np.sum(pzcx*px[None,:],axis=1)-pz
+		errzcy = pzcx@pxcy-pzcy
+		errzec = pzcx - np.sum(pzeccx,axis=0)
+		errzec_z = np.sum(pzcx*px[None,:],axis=1)-np.sum(pzec,axis=0)
+		errzec_zcy=pzcx@pxcy - np.sum(pzeccy,axis=0)
+		tmp_grad = gamma*(np.log(pzcx)+1)*px[None,:] + (mu_z+ pcoeff*errz)[:,None]*px[None,:]\
+					 +(mu_zcy + pcoeff*errzcy)@pxcy.T\
+					 +(mu_zeccx + pcoeff*errzec) \
+					 +(mu_zec + pcoeff*errzec_z)[:,None]*px[None,:]\
+					 +(mu_zeccy + pcoeff*errzec_zcy)@pxcy.T
+		return tmp_grad
+	return gradObj
+
+# NOTE: involved common variables only
+def gradPzComnObj(gamma_vec,px_list,pcoeff):
+	def gradObj(pz,pzcx_list,muz_list):
+		errz_list = [np.sum(pzcx_list[idx]*(px_list[idx])[None,:],axis=1)-pz for idx in range(len(px_list))]
+		return (-1+np.sum(gamma_vec))*(np.log(pz)+1)-sum(muz_list)-pcoeff*sum(errz_list)
+	return gradObj
+
+# NOTE: involved common variables only
+def gradPzcyComnObj(pxcy_list,py,pcoeff):
+	def gradObj(pzcy,pzcx_list,muzcy_list):
+		errzcy_list  =[pzcx_list[idx]@pxcy_list[idx]-pzcy for idx in range(len(pxcy_list))]
+		return -(np.log(pzcy)+1)*py[None,:]-sum(muzcy_list)-pcoeff*sum(errzcy_list)
+	return gradObj
+
+def gradPzcxCmplObj(gamma,px,pcoeff):
+	def gradObj(pzcx,pzeccx,mu_zeccx):
+		errzeccx = pzcx - np.sum(pzeccx,axis=0)
+		tmp_pzccx = np.sum(pzeccx,axis=0)
+		phi_grad = -gamma * px[None,None,:]*(-np.log(pzeccx)-1+np.log(tmp_pzccx)[None,...]+pzeccx/tmp_pzccx[None,...])
+		return phi_grad - mu_zeccx[None,...]-pcoeff*errzeccx[None,...]
+	return gradObj
+
+def gradPzCmplObj(gamma,px,pcoeff):
+	def gradObj(pzcx,pzec,mu_zec):
+		errzec = np.sum(pzcx*px[None,:],axis=1) - np.sum(pzec,axis=0)
+		tmp_pzc = np.sum(pzec,axis=0)
+		psi_z_grad = (gamma-1)*(-np.log(pzec)-1+np.log(tmp_pzc)[None,:]+pzec/tmp_pzc[None,:])
+		return psi_z_grad - mu_zec[None,:]- pcoeff*errzec[None,:]
+	return gradObj
+def gradPzcyCmplObj(pxcy,py,pcoeff):
+	def gradObj(pzcx,pzeccy,mu_zeccy):
+		errzeccy = pzcx@pxcy - np.sum(pzeccy,axis=0)
+		tmp_pzccy = np.sum(pzeccy,axis=0)
+		psi_zcy_grad = py[None,None,:] * (-np.log(pzeccy)-1+np.log(tmp_pzccy)[None,...]+pzeccy/tmp_pzccy[None,...])
+		return psi_zcy_grad - mu_zeccy[None,...] - pcoeff*errzeccy[None,...]
 	return gradObj
 
 # implement the naive step size search algorithm

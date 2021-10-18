@@ -14,131 +14,12 @@ def select(method):
 		return mvib_nv_parallel
 	elif method == "reverse":
 		return mvib_nv_rev
+	elif method == "complement":
+		return mvib_nv_cc
 	else:
 		sys.exit("ERROR[mvalg]: selection failed, the method {} is undefined".format(method))
 def availableAlgs():
-	return ['nview','parallel','reverse']
-
-'''
-def mvib_2v(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
-	assert len(pxy_list) == 2
-	pxy1 = pxy_list[0]
-	pxy2 = pxy_list[1]
-	assert gamma_vec.shape[0] == 2
-	gamma1 = gamma_vec[0]
-	gamma2 = gamma_vec[1]
-	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
-	pen_coeff = kwargs['penalty_coefficient']
-	gd_ss_init = kwargs['init_stepsize']
-	gd_ss_scale = kwargs['stepsize_scale']
-	# preparation for initialization
-	(nx1,ny1) = pxy1.shape
-	(nx2,ny2) = pxy2.shape
-	assert ny1==ny2, "the dimension of y1 and y2 must be the same!"
-	ny = ny1
-
-	# the marginal probability
-	# FIXME: right now, assume the marginal py are the same in both pxy1 pxy2
-	py = np.sum(pxy1,0)
-	px_v1 = np.sum(pxy1,1)
-	px_v2 = np.sum(pxy2,1)
-	px_list = [px_v1,px_v2]
-	pxcy_v1 =  pxy1 / py[None,:]
-	pxcy_v2 = pxy2 / py[None,:]
-	pxcy_list = [pxcy_v1,pxcy_v2]
-	gamma_vec = np.array([gamma1,gamma2])
-
-	# initialize with random values
-	pzcx_v1 = rs.rand(nz,nx1)
-	pzcx_v1 /= np.sum(pzcx_v1,axis=0)
-	
-	pzcx_v2 = rs.rand(nz,nx2)
-	pzcx_v2 /= np.sum(pzcx_v2,axis=0)
-
-	# augmented variables
-	# FIXME: Can use averaging as a initial point
-	pz = 0.5 * (pzcx_v1@px_v1 + pzcx_v2@px_v2)
-	pz /= np.sum(pz)
-
-	pzcy = 0.5 *(pzcx_v1@pxcy_v1 + pzcx_v2@pxcy_v2)
-	pzcy /= np.sum(pzcy,axis=0)
-
-	# dual variables
-	dz_v1 = np.zeros(nz)
-	dz_v2 = np.zeros(nz)
-	dzcy_v1 = np.zeros((nz,ny))
-	dzcy_v2 = np.zeros((nz,ny))
-
-	# objects for gradients
-	fobj_pzcx_v1 = gd.funcPzcxObj(gamma1,px_v1,pxcy_v1,pen_coeff)
-	fobj_pzcx_v2 = gd.funcPzcxObj(gamma2,px_v2,pxcy_v2,pen_coeff)
-	gobj_pzcx_v1 = gd.gradPzcxObj(gamma1,px_v1,pxcy_v1,pen_coeff)
-	gobj_pzcx_v2 = gd.gradPzcxObj(gamma2,px_v2,pxcy_v2,pen_coeff)
-
-	fobj_pz      = gd.funcPzObj(gamma_vec,px_list,pen_coeff)
-	fobj_pzcy    = gd.funcPzcyObj(pxcy_list,py,pen_coeff)
-	gobj_pz      = gd.gradPzObj(gamma_vec,px_list,pen_coeff)
-	gobj_pzcy    = gd.gradPzcyObj(pxcy_list,py,pen_coeff)
-
-	# counters and flags
-	itcnt = 0
-	flag_conv = False
-	while itcnt < maxiter:
-		itcnt += 1
-		# update the first view enc
-		grad_pzcx_v1 = gobj_pzcx_v1(pzcx_v1,pz,pzcy,dz_v1,dzcy_v1)
-		# manually mean
-		mean_grad_pzcx_v1 = grad_pzcx_v1 - np.mean(grad_pzcx_v1,axis=0)
-		ss_zcx_v1 = gd.naiveStepSize(pzcx_v1,-mean_grad_pzcx_v1,gd_ss_init,gd_ss_scale)
-		if ss_zcx_v1 ==0:
-			break
-		#ss_zcx_v1 = gd.armijoStepSize(pzcx_v1,-mean_grad_pzcx_v1,gd_ss)
-		new_pzcx_v1 = pzcx_v1 -ss_zcx_v1 * mean_grad_pzcx_v1
-		# update the second view enc
-		grad_pzcx_v2 = gobj_pzcx_v2(pzcx_v2,pz,pzcy,dz_v2,dzcy_v2)
-		mean_grad_pzcx_v2 = grad_pzcx_v2 - np.mean(grad_pzcx_v2,axis=0)
-		ss_zcx_v2 = gd.naiveStepSize(pzcx_v2,-mean_grad_pzcx_v2,gd_ss_init,gd_ss_scale)
-		if ss_zcx_v2 ==0:
-			break
-		new_pzcx_v2 = pzcx_v2 - ss_zcx_v2* mean_grad_pzcx_v2
-		new_pzcx_list = [new_pzcx_v1,new_pzcx_v2]
-		# update the augmented var
-		grad_pz = gobj_pz(new_pzcx_list,pz,[dz_v1,dz_v2])
-		mean_grad_pz = grad_pz - np.mean(grad_pz)
-		ss_z = gd.naiveStepSize(pz,-mean_grad_pz,gd_ss_init,gd_ss_scale)
-		if ss_z == 0:
-			break
-		new_pz = pz -ss_z * mean_grad_pz
-		grad_pzcy = gobj_pzcy(new_pzcx_list,pzcy,[dzcy_v1,dzcy_v2])
-		mean_grad_pzcy = grad_pzcy - np.mean(grad_pzcy,axis=0)
-		ss_zcy = gd.naiveStepSize(pzcy,-mean_grad_pzcy,gd_ss_init,gd_ss_scale)
-		if ss_zcy == 0:
-			break
-		new_pzcy = pzcy - mean_grad_pzcy * ss_zcy
-		# update the dual variables
-		err_z_v1   = new_pz   - new_pzcx_v1 @ px_v1
-		err_z_v2   = new_pz   - new_pzcx_v2 @ px_v2
-		err_zcy_v1 = new_pzcy - new_pzcx_v1 @ pxcy_v1
-		err_zcy_v2 = new_pzcy - new_pzcx_v2 @ pxcy_v2
-		dz_v1   = dz_v1   + pen_coeff*err_z_v1
-		dz_v2   = dz_v2   + pen_coeff*err_z_v2
-		dzcy_v1 = dzcy_v1 + pen_coeff*err_zcy_v1
-		dzcy_v2 = dzcy_v2 + pen_coeff*err_zcy_v2
-		# convergence criterion
-		conv_z_v1   = 0.5*np.sum(np.fabs(err_z_v1))<convthres
-		conv_z_v2   = 0.5*np.sum(np.fabs(err_z_v2))<convthres
-		conv_zcy_v1 = np.all(0.5*np.sum(np.fabs(err_zcy_v1),axis=0)<convthres)
-		conv_zcy_v2 = np.all(0.5*np.sum(np.fabs(err_zcy_v2),axis=0)<convthres)
-		if conv_z_v1 and conv_z_v2 and conv_zcy_v1 and conv_zcy_v2:
-			flag_conv = True
-			break
-		# update the registers
-		pzcx_v1 = new_pzcx_v1
-		pzcx_v2 = new_pzcx_v2
-		pz = new_pz
-		pzcy = new_pzcy
-	return {'pzcx_list':[pzcx_v1,pzcx_v2],'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv}
-'''
+	return ['nview','parallel','reverse','complement']
 
 # A general n view ADMM IB
 def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
@@ -519,6 +400,168 @@ def mvib_nv_rev(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	print(errzcy_list)
 	'''
 	return {'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv}
+
+# the new formulation, with complement information taken into consideration
+def mvib_nv_cc(pxy_list,gamma_vec,gamma_cmpl,nzc,nze_vec,convthres,maxiter,**kwargs):
+	# besides the dim for common representation zc,
+	# the dimensions for the complement representations zn for each view should be given
+	# This will result in additional sets of augmented variables and even coupling of them.
+	# should carefully handle the update steps!
+	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
+	pen_coeff = kwargs['penalty_coefficient']
+	gd_ss_init = kwargs['init_stepsize']
+	gd_ss_scale = kwargs['stepsize_scale']
+	# assume py are all the same for each view's joint prob
+	nview = len(pxy_list)
+	py = np.sum(pxy_list[0],axis=0)
+	ny = len(py)
+	# generate lists
+	px_list = [np.sum(i,axis=1) for i in pxy_list]
+	pxcy_list = [i/py[None,:] for i in pxy_list]
+	# initialization
+	# NOTE: this is kept as a tensor
+	# p complement, joint probability
+	pzeccx_list = [rs.rand(nze_vec[idx],nzc,item.shape[0]) for idx,item in enumerate(pxy_list)] # the dimension as in the x view
+	# how to normalize a tensor?
+	pzeccx_list = [tt/np.sum(tt,axis=(0,1))[...,:] for tt in pzeccx_list]
+	# initialize with summing the random point in complement view
+	# p common
+	pzcx_list = [np.sum(tt,axis=0) for tt in pzeccx_list]
+
+	# q common
+	pz_cmon = 1/nview * sum([pzcx_list[i]@px_list[i] for i in range(nview)])
+	pz_cmon /= np.sum(pz_cmon)
+	pzcy_cmon = 1/nview * sum([pzcx_list[i]@pxcy_list[i] for i in range(nview)])
+	pzcy_cmon /= np.sum(pzcy_cmon,axis=0)[None,:]
+	# q complement
+	pzec_list = [tt@px_list[i] for i,tt in enumerate(pzeccx_list)]
+	pzeccy_list = [tt@pxcy_list[i] for i,tt in enumerate(pzeccx_list)]
+	
+	# dual variable
+	dz_list = [np.zeros(nzc) for i in range(nview)]
+	dzcy_list = [np.zeros((nzc,ny)) for i in range(nview)]
+	# for the complement
+	dzeccx_list = [np.zeros((nzc,pxy_list[i].shape[0])) for i in range(nview)]
+	dzec_list = [np.zeros(nzc) for i in range(nview)]
+	dzeccy_list = [np.zeros((nzc,ny)) for i in range(nview)]
+
+	# gradient objects, possibly function value objects
+	gobj_pzcx_list = [gd.gradPzcxComnObj(gamma_vec[idx],px_list[idx],pxcy_list[idx],pen_coeff) for idx in range(nview)]
+	gobj_pz = gd.gradPzComnObj(gamma_vec,px_list,pen_coeff)
+	gobj_pzcy=gd.gradPzcyComnObj(pxcy_list,py,pen_coeff)
+	gobj_pzeccx_list = [gd.gradPzcxCmplObj(gamma_cmpl,px_list[idx],pen_coeff) for idx in range(nview)]
+	gobj_pzec_list = [gd.gradPzCmplObj(gamma_cmpl,px_list[idx],pen_coeff) for idx in range(nview)]
+	gobj_pzeccy_list = [gd.gradPzcyCmplObj(pxcy_list[idx],py,pen_coeff) for idx in range(nview)]
+
+	# counters and registers
+	itcnt =0
+	flag_conv = False
+	while itcnt< maxiter:
+		itcnt += 1
+		# step 1: update view common encoder
+		_ss_interrupt = False
+		new_pzcx_list = [np.zeros((nzc,tt.shape[0])) for tt in pxy_list]
+		for vi in range(nview):
+			tmp_grad_pzcx = gobj_pzcx_list[vi](
+					pzcx_list[vi],pz_cmon,pzcy_cmon,
+					pzeccx_list[vi],pzec_list[vi],pzeccy_list[vi],
+					dz_list[vi],dzcy_list[vi],
+					dzeccx_list[vi],dzec_list[vi],dzeccy_list[vi]
+				)
+			mean_tmp_grad_pzcx = tmp_grad_pzcx - np.mean(tmp_grad_pzcx,axis=0)[None,:]
+			tmp_ss_pzcx = gd.naiveStepSize(pzcx_list[vi],-mean_tmp_grad_pzcx,gd_ss_init,gd_ss_scale)
+			if tmp_ss_pzcx == 0:
+				_ss_interrupt = True
+				break
+			new_pzcx_list[vi] = pzcx_list[vi] - tmp_ss_pzcx*mean_tmp_grad_pzcx
+		if _ss_interrupt:
+			break
+		# step 2: update the common latent representation
+		grad_pz_cmon = gobj_pz(pz_cmon,new_pzcx_list,dz_list)
+		mean_grad_pz_cmon = grad_pz_cmon - np.mean(grad_pz_cmon)
+		ss_z_cmon = gd.naiveStepSize(pz_cmon,-mean_grad_pz_cmon,gd_ss_init,gd_ss_scale)
+		if ss_z_cmon == 0:
+			break
+		grad_pzcy_cmon = gobj_pzcy(pzcy_cmon,new_pzcx_list,dzcy_list)
+		mean_grad_pzcy_cmon = grad_pzcy_cmon - np.mean(grad_pzcy_cmon,axis=0)[None,:]
+		ss_zcy_cmon = gd.naiveStepSize(pzcy_cmon,-mean_grad_pzcy_cmon,gd_ss_init,gd_ss_scale)
+		if ss_zcy_cmon ==0:
+			break
+		ss_zzcy_cmon_min = min(ss_z_cmon,ss_zcy_cmon) #NOTE: the update should be coupled together
+		new_pz_cmon = pz_cmon - mean_grad_pz_cmon * ss_zzcy_cmon_min
+		new_pzcy_cmon = pzcy_cmon - mean_grad_pzcy_cmon * ss_zzcy_cmon_min
+
+		# step 3: update view complement encoder
+		# NOTE: Can be done once pzcx is updated. Written here for development.
+		#       Each complement encoder is stored as a tensor and is a joint probability
+		new_pzeccx_list = [np.zeros((nze_vec[idx],nzc,tt.shape[0])) for idx,tt in enumerate(pxy_list)]
+		for vi in range(nview):
+			tmp_grad_pzeccx = gobj_pzeccx_list[vi](new_pzcx_list[vi],pzeccx_list[vi],dzeccx_list[vi])
+			mean_tmp_grad_pzeccx = tmp_grad_pzeccx - np.mean(tmp_grad_pzeccx,axis=(0,1))[...,:]
+			tmp_ss_pzeccx = gd.naiveStepSize(pzeccx_list[vi],-mean_tmp_grad_pzeccx,gd_ss_init,gd_ss_scale)
+			if tmp_ss_pzeccx == 0:
+				_ss_interrupt = True
+				break
+			new_pzeccx_list[vi] = pzeccx_list[vi] - tmp_ss_pzeccx * mean_tmp_grad_pzeccx
+		if _ss_interrupt:
+			break
+		# step 4: update view complement latent representation
+		new_pzec_list   = [np.zeros((tt,nzc)) for tt in nze_vec]
+		new_pzeccy_list = [np.zeros((tt,nzc,ny)) for tt in nze_vec]
+		for vi in range(nview):
+			# pzc
+			tmp_grad_pzec = gobj_pzec_list[vi](new_pzcx_list[vi],pzec_list[vi],dzec_list[vi])
+			mean_tmp_grad_pzec = tmp_grad_pzec - np.mean(tmp_grad_pzec)
+			tmp_ss_pzec = gd.naiveStepSize(pzec_list[vi],-mean_tmp_grad_pzec,gd_ss_init,gd_ss_scale)
+			if tmp_ss_pzec ==0:
+				_ss_interrupt = True
+				break
+			# pzccy
+			tmp_grad_pzeccy = gobj_pzeccy_list[vi](new_pzcx_list[vi],pzeccy_list[vi],dzeccy_list[vi])
+			mean_tmp_grad_pzeccy = tmp_grad_pzeccy - np.mean(tmp_grad_pzeccy,axis=(0,1))[...,:]
+			tmp_ss_pzeccy = gd.naiveStepSize(pzeccy_list[vi],-mean_tmp_grad_pzeccy,gd_ss_init,gd_ss_scale)
+			if tmp_ss_pzeccy == 0:
+				_ss_interrupt = True
+				break
+			tmp_ss_pzecccy_min = min(tmp_ss_pzec,tmp_ss_pzeccy) # NOTE:the update should be coupled together
+			new_pzec_list[vi] = pzec_list[vi] - tmp_ss_pzecccy_min * mean_tmp_grad_pzec
+			new_pzeccy_list[vi] = pzeccy_list[vi] - tmp_ss_pzecccy_min * mean_tmp_grad_pzeccy
+		if _ss_interrupt:
+			break
+		# step 5: dual variables updates
+		# common error
+		errz_list = [ np.sum(item*px_list[idx][None,:],axis=1)-new_pz_cmon for idx,item in enumerate(new_pzcx_list)]
+		errzcy_list = [item@(pxcy_list[idx])-new_pzcy_cmon for idx, item in enumerate(new_pzcx_list)]
+		dz_list = [item + pen_coeff * (errz_list[idx]) for idx,item in enumerate(dz_list)]
+		dzcy_list = [item + pen_coeff * (errzcy_list[idx]) for idx,item in enumerate(dzcy_list)]
+		# complement error
+		errzeccx_list = [new_pzcx_list[idx]-np.sum(item,axis=0) for idx,item in enumerate(new_pzeccx_list)]
+		errzec_list = [np.sum(new_pzcx_list[idx]*px_list[idx][None,:],axis=1) - np.sum(item,axis=0) for idx,item in enumerate(new_pzec_list)]
+		errzecy_list = [new_pzcx_list[idx]@pxcy_list[idx] - np.sum(item,axis=0) for idx,item in enumerate(new_pzeccy_list)]
+		dzeccx_list = [item + pen_coeff*(errzeccx_list[idx]) for idx,item in enumerate(dzeccx_list)]
+		dzec_list = [item + pen_coeff*(errzec_list[idx]) for idx,item in enumerate(dzec_list)]
+		dzeccy_list=[item + pen_coeff*(errzecy_list[idx]) for idx,item in enumerate(dzeccy_list)]
+
+		# Control step: convergence criterion
+		conv_z_list = [0.5* np.sum(np.fabs(item))<convthres for item in errz_list]
+		conv_zcy_list = [0.5*np.sum(np.fabs(item),axis=0)<convthres for item in errzcy_list]
+		conv_zcx_cmpl_list = [0.5*np.sum(np.fabs(item))<convthres for item in errzeccx_list]
+		conv_z_cmpl_list = [0.5*np.sum(np.fabs(item))<convthres for item in errzec_list]
+		conv_zcy_cmpl_list = [0.5*np.sum(np.fabs(item),axis=0)<convthres for item in errzecy_list]
+		conv_all = np.all(conv_z_list) and np.all(conv_zcy_list)\
+					 and np.all(conv_z_cmpl_listv_z) and np.all(conv_zcy_cmpl_list) and np.all(conv_zcx_cmpl_list)
+		if conv_all:
+			flag_conv = True
+			break
+		# Control step: passing to next iteration
+		pzcx_list = new_pzcx_list
+		pz_cmon = new_pz_cmon
+		pzcy_cmon = new_pzcy_cmon
+		pzeccx_list = new_pzeccx_list
+		pzeccy_list = new_pzeccy_list
+	return {'pzcx_list':pzcx_list,'pz':pz_cmon,'pzcy':pzcy_cmon,
+			'pzcx_cmpl_list':pzeccx_list,'pz_cmpl_list':pzec_list,'pzcy_cmpl_list':pzeccy_list,
+			'niter':itcnt,'conv':conv_all}
 
 # compared algorithms
 def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):
