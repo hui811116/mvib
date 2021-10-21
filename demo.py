@@ -61,13 +61,14 @@ if argsdict['method'] != "complement":
 	algout = algsel(**{**alg_args,**sys_param})
 else:
 	cmpl_param = {
-		"gamma_cmpl": gamma_vec[0],
+		#"gamma_cmpl": gamma_vec[0],
+		"gamma_cmpl": 0.9,
 		"nzc": data_dict['nz'],
-		#"nze_vec":np.array([data_dict['nz']]*len(pxy_list)),   #FIXME: right now the same as nzc for basic result guarantee
-		"nze_vec":np.array([item.shape[0] for item in pxy_list]),
+		"nze_vec":np.array([data_dict['nz']]*len(pxy_list)),   #FIXME: right now the same as nzc for basic result guarantee
+		#"nze_vec":np.array([item.shape[0] for item in pxy_list]),
 	}
 	algout = algsel(**{**alg_args,**sys_param,**cmpl_param})
-	pprint.pprint(algout)
+	#pprint.pprint(algout)
 # calculate mizx for each view
 mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
 mizy = ut.calcMI(algout['pzcy'] *py[None,:])
