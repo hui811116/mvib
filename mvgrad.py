@@ -22,32 +22,7 @@ def gradPzcxObj(gamma,px,pxcy,pcoeff):
 				-(mu_zcy+pcoeff*(errzy))@pxcy.T
 		return grad
 	return gradObj
-'''
-def funcQObj(gamma_vec,px_list,pxcy_list,py,pcoeff):
-	def valObj(pzcx_list,pz,pzcy,muz_list,muzcy_list):
-		# calculating errors
-		errz_list = [pz-pzcx_list[i]@px_list[i] for i in range(len(px_list))]
-		errzcy_list = []
-		for i in range(len(gamma_vec)):
-			errzcy_list.append(pzcy-pzcx_list[i]@pxcy_list[i])
-		# calculate the func values
-		errznorm2 = sum([np.linalg.norm(i,2)**2 for i in errz_list])
-		errzcynorm2=sum([np.linalg.norm(i,2)**2 for i in errzcy_list])
-		errzddot  = sum([np.dot(muz_list[i],errz_list[i]) for i in range(len(px_list))])
-		errzcyddot = sum([np.dot(muzcy_list[i],errzcy_list[i]) for i in range(len(px_list))])
-		return (-1+np.sum(gamma_vec))*ut.calcEnt(pz)+ut.calcCondEnt(pzcy,py)\
-				+errzddot+errzcyddot+0.5*pcoeff*(errznorm2+errzcynorm2) # FIXME, the dimension is wrong
-	return valObj
 
-def gradQObj(gamma_vec,px_list,pxcy_list,pcoeff):
-	def gradObj(pzcx_list,pz,pzcy,muz_list,muzcy_list):
-		errz_list = [pz-pzcx_list[i]@px_list[i] for i in range(len(px_list))]
-		errzcy_list=[pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(px_list))]
-		grad = (1-np.sum(gamma_vec))*(np.log(pz)+1)-(np.log(pzcy)+1)*py[None,:]\
-				+sum(muz_list)+sum(muzcy_list)+pcoeff*(sum(errz_list)+sum(errzcy_list))
-		return grad
-	return gradObj
-'''
 # NOTE: the following returns Pz func, grad separately
 def funcPzObj(gamma_vec,px_list,pcoeff):
 	def valObj(pz,pzcx_list,muz_list):
@@ -89,7 +64,7 @@ def gradPzcxComnObj(gamma,px,pxcy,pcoeff):
 		errzcy = pzcx@pxcy-pzcy
 		errzec = pzcx - np.sum(pzeccx,axis=0)
 		tmp_grad = gamma*(np.log(pzcx)+1)*px[None,:] + (mu_z+ pcoeff*errz)[:,None]*px[None,:]\
-					 +(mu_zcy + pcoeff*errzcy)@pxcy.T \
+					 +(mu_zcy + pcoeff*errzcy)@pxcy.T\
 					 +(mu_zec + pcoeff*errzec)
 		return tmp_grad
 	return gradObj
@@ -112,46 +87,70 @@ def gradPzcxCmplObj(gamma,px,pxcy,pycx,pcoeff):
 	def gradObj(pzeccx,aug_pzcx,mu_zec):
 		errzec = aug_pzcx - np.sum(pzeccx,axis=0)
 		pzcx = np.sum(pzeccx,axis=0)
-		pz = np.sum(pzcx * px[None,:],axis=1)
+		pz = np.sum(pzcx * px,axis=1)
 		pzcy = pzcx@pxcy
 		pzec = np.sum(pzeccx*px[...,:],axis=2)
 		pzeccy = pzeccx@pxcy
 		tmp_cmpl = np.log(pzeccx) - np.log(pzec)[...,None] - (1/gamma)*(np.log(pzeccy)-np.log(pzec)[...,None])@pycx
 		tmp_cmon = np.log(pzcx) - np.log(pz)[:,None] - (1/gamma)*(np.log(pzcy)-np.log(pz)[:,None])@pycx
-		tmp_diff = (pzec/pz[None,:])[...,None]-pzeccx/pzcx[None,...]-(1/gamma)*( (pzec/pz[None,:])[...,None]-pzeccy/pzcy[None,...])@pycx
-		return gamma*px[...,:]*(tmp_cmpl-tmp_cmon[None,...]+tmp_diff) - (mu_zec+pcoeff*errzec)[None,...]
+		tmp_diff = (pzec/pz)[...,None]-pzeccx/pzcx-(1/gamma)*( (pzec/pz)[...,None]-(pzeccy/pzcy)@pycx)
+		return gamma*px[...,:]*(tmp_cmpl-tmp_cmon+tmp_diff) - (mu_zec+pcoeff*errzec)[None,...]
 	return gradObj
 
-'''
-def gradPzcxCmplObj(gamma,px,pcoeff):
-	def gradObj(pzcx,pzeccx,mu_zeccx):
-		tmp_pzccx = np.sum(pzeccx,axis=0)
-		errzeccx = pzcx - tmp_pzccx
-		phi_grad = -gamma * px[...,:]*(-np.log(pzeccx)-1+np.log(tmp_pzccx)[None,:]+pzeccx/tmp_pzccx[None,:])
-		return phi_grad - mu_zeccx[None,:]-pcoeff*errzeccx[None,:]
+# masking gradient to avoid underflowing
+def maskGradPzcxCmonObj(gamma,px,pxcy,pcoeff,mask_thres):
+	def gradObj(pzcx,pz,pzcy,pzeccx,mu_z,mu_zcy,mu_zec):
+		errzec = pzcx - np.sum(pzeccx,axis=0)
+		err = np.sum(pzcx * px[None,:],axis=1)-pz
+		errzy = pzcx @pxcy- pzcy
+		val_mask= np.logical_and(pzcx>mask_thres,pzcx < 1-mask_thres)
+		raw_grad = np.zeros(pzcx.shape)
+		all_grad = gamma * (np.log(pzcx)+1)*px[None,:]+(mu_z+pcoeff*err)[:,None]*px[None,:]\
+								+(mu_zcy+pcoeff*errzy)@pxcy.T\
+								+(mu_zec + pcoeff*errzec)
+		raw_grad[val_mask] = all_grad[val_mask]
+		# return the mean subtracted gradient
+		mcount = np.any(val_mask,axis=0)
+		for idx in range(len(mcount)):
+			if mcount[idx]:
+				tmpmean = np.mean(raw_grad[:,idx][val_mask[:,idx]])
+				raw_grad[:,idx][val_mask[:,idx]] -= tmpmean
+		return raw_grad
 	return gradObj
 
-def gradPzCmplObj(gamma,px,pcoeff):
-	def gradObj(pzcx,pzec,mu_zec):
-		tmp_pzc = np.sum(pzec,axis=0)
-		errzec = np.sum(pzcx*px[None,:],axis=1) - tmp_pzc
-		psi_z_grad = (gamma-1)*(-np.log(pzec)-1+np.log(tmp_pzc)[None,:]+pzec/tmp_pzc[None,:])
-		return psi_z_grad - mu_zec[None,:]- pcoeff*errzec[None,:]
+def maskGradPzcxCmplObj(gamma,px,pxcy,pycx,pcoeff,mask_thres):
+	def gradObj(pzeccx,aug_pzcx,mu_zec):
+		errzec = aug_pzcx - np.sum(pzeccx,axis=0)
+		pzcx = np.sum(pzeccx,axis=0)
+		pz = np.sum(pzcx * px[None,:],axis=1)
+		pzcy = pzcx@pxcy
+		pzec = np.sum(pzeccx*px[...,:],axis=2)
+		pzeccy = pzeccx@pxcy
+		# masking
+		cmpl_mask = np.logical_and(pzeccx>mask_thres,pzeccx<1-mask_thres) # this is the overall elements to be updated (px!=0)
+		gradout = np.zeros(pzeccx.shape)
+		# raw gradient
+		tmp_cmpl = np.log(pzeccx/pzec[...,None]) -(1/gamma)*(np.log(pzeccy/pzec[...,None])@pycx)
+		tmp_cmon = np.log(pzcx/pz[:,None])-(1/gamma)*(np.log(pzcy/pz[:,None])@pycx)
+		tmp_diff = (pzec/pz[None,:])[...,None]-pzeccx/pzcx[None,...]-(1/gamma)*((pzec/pz[None,:])[...,None]-(pzeccy/pzcy[None,...])@pycx)
+		all_grad = (gamma*px[...,:]*(tmp_cmpl-tmp_cmon+tmp_diff)-(mu_zec+pcoeff*errzec)[None,...])
+		gradout[cmpl_mask] = all_grad[cmpl_mask]
+		# subtract gradient mean conditioned on x
+		cond_check = np.any(cmpl_mask,axis=(0,1))
+		for idx in range(len(cond_check)):
+			if cond_check[idx]:
+				tmp_mean = np.mean(gradout[...,idx][cmpl_mask[...,idx]])
+				gradout[...,idx][cmpl_mask[...,idx]]-= tmp_mean
+		return gradout
 	return gradObj
-def gradPzcyCmplObj(pxcy,py,pcoeff):
-	def gradObj(pzcx,pzeccy,mu_zeccy):
-		tmp_pzccy = np.sum(pzeccy,axis=0)
-		errzeccy = pzcx@pxcy - tmp_pzccy
-		psi_zcy_grad = py[...,:] * (-np.log(pzeccy)-1+np.log(tmp_pzccy)[None,:]+pzeccy/tmp_pzccy[None,:])
-		return psi_zcy_grad - mu_zeccy[None,:] - pcoeff*errzeccy[None,:]
-	return gradObj
-'''
+
+
 # implement the naive step size search algorithm
 def naiveStepSize(prob,update,init_step,scale):
 	stepsize= init_step
 	while np.any(prob+stepsize*update<=0.0) or np.any(prob+stepsize*update>=1.0):
 		stepsize *= scale
-		if stepsize< 1e-9:
+		if stepsize< 1e-11:
 			stepsize = 0
 			break
 	return stepsize
@@ -173,7 +172,7 @@ def naiveConditionalStepSize(prob,update,target,init_step,scale):
 	stepsize = init_step
 	while np.any(prob+stepsize*update>target) or np.any(prob+stepsize*update<0):
 		stepsize *= scale
-		if stepsize < 1e-9:
+		if stepsize < 1e-13:
 			stepsize = 0
 			break
 	return stepsize

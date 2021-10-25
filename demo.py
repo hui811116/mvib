@@ -21,8 +21,8 @@ parser.add_argument('-thres',type=float,help='Convergence threshold',default=1e-
 parser.add_argument('-seed',type=int,help='Random Seed for Reproduction',default=None)
 parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=20000)
 parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default=4.0)
-parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=1e-2)
-parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.125)
+parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=5e-3)
+parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.25)
 parser.add_argument('-dataset',type=str,help='The dataset for simulation',default="syn2")
 parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.08,0.05")
 parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=25)
@@ -59,18 +59,27 @@ alg_args  = {
 algsel = alg.select(argsdict['method'])
 if argsdict['method'] != "complement":
 	algout = algsel(**{**alg_args,**sys_param})
+	pprint.pprint(algout)
 else:
 	cmpl_param = {
 		#"gamma_cmpl": gamma_vec[0],
-		"gamma_cmpl": 0.9,
+		"gamma_cmpl": 0.1,
 		"nzc": data_dict['nz'],
-		"nze_vec":np.array([data_dict['nz']]*len(pxy_list)),   #FIXME: right now the same as nzc for basic result guarantee
-		#"nze_vec":np.array([item.shape[0] for item in pxy_list]),
+		#"nze_vec":np.array([data_dict['nz']]*len(pxy_list)),   #FIXME: right now the same as nzc for basic result guarantee
+		"nze_vec":np.array([item.shape[0] for item in pxy_list]),
 	}
 	algout = algsel(**{**alg_args,**sys_param,**cmpl_param})
-	#pprint.pprint(algout)
+	#print('sum pzeccx')
+	#print([np.sum(item,axis=(0,1)) for item in algout['pzcx_cmpl_list']])
+	pprint.pprint(algout)
+	mizx_cmpl = [ut.calcMICmpl(algout['pzcx_cmpl_list'][idx]*px_list[idx][...,:]) for idx in range(len(pxy_list))]
+	mizy_cmpl = [ut.calcMICmpl(algout['pzcx_cmpl_list'][idx]@pxy_list[idx]) for idx in range(len(pxy_list))]
+	pprint.pprint({'IZX_CMPL_list':mizx_cmpl,'IZY_CMPL_list':mizy_cmpl})
 # calculate mizx for each view
 mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
 mizy = ut.calcMI(algout['pzcy'] *py[None,:])
 
-pprint.pprint({'IXY_list':mixy_list,'IZX_list':mizx_list,'IZY':mizy,'converged':algout['conv'],'num_iter':algout['niter']})
+
+pprint.pprint({
+	'IXY_list':mixy_list,'IZX_list':mizx_list,'IZY':mizy,
+	'converged':algout['conv'],'num_iter':algout['niter']})
