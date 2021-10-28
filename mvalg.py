@@ -457,6 +457,63 @@ def mvib_nv_cc(pxy_list,gamma_vec,gamma_cmpl,nzc,nze_vec,convthres,maxiter,**kwa
 			'pzcx_cmpl_list':pzeccx_list,
 			'niter':itcnt,'conv':flag_conv}
 
+# two-step method, complement representation algorithm
+def mvib_sv_cmpl(pxy,ne,enc_pzcx,gamma,conv_thres,maxiter,**kwargs):
+	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
+	# FIXME: fixed threshold
+	vmask_thres = 1e-9
+	#pen_coeff = kwargs['penalty_coefficient']
+	gd_ss_init = kwargs['init_stepsize']
+	gd_ss_scale = kwargs['stepsize_scale']
+	# preparing the prerequsite
+	(nx,ny) = pxy.shape
+	nc = enc_pzcx.shape[0]
+	px = np.sum(pxy,axis=1)
+	py = np.sum(pxy,axis=0)
+	pxcy = pxy/py[None,:]
+	pycx = (pxy/px[:,None]).T
+	expd_enc = np.repeat(enc_pzcx[None,...],ne,axis=0)
+	# initialization
+	pzeccx = rs.rand(ne,nc,nx)
+	nsum = np.sum(pzeccx,axis=0)
+	pzeccx /= nsum[None,...]
+	pzeccx *= enc_pzcx[None,...]
+	itcnt =0 
+	conv_flag = False
+	#debug_error = 0
+	while itcnt< maxiter:
+		#print('Iteration',itcnt)
+		#print(pzeccx)
+		itcnt += 1
+		vmask = np.logical_and(pzeccx > vmask_thres , pzeccx < 1-vmask_thres)
+		pzec = np.sum(pzeccx*px[...,:],axis=2)
+		rep_pzec = np.repeat(pzec[...,None],nx,axis=2)
+		pzeccy = pzeccx @ pxcy
+		grad_yterm = np.log(pzeccy) @ pycx
+		raw_grad = np.zeros((ne,nc,nx))
+		raw_grad[vmask] = gamma*(np.log(pzeccx[vmask]/rep_pzec[vmask])\
+						-1/gamma*(grad_yterm[vmask]-np.log(rep_pzec[vmask])))
+		raw_grad *= px[...,:]
+		# conditional mean
+		mean_grad = np.zeros((ne,nc,nx))
+		calc_grad = np.mean(raw_grad,axis=0)
+		mean_grad[vmask] = raw_grad[vmask]- np.repeat(calc_grad[None,...],ne,axis=0)[vmask]
+		ss_tmp = gd.naiveConditionalStepSize(pzeccx,-mean_grad,expd_enc,gd_ss_init,gd_ss_scale)
+		if ss_tmp ==0:
+			break
+		new_pzeccx = pzeccx -ss_tmp* mean_grad
+		dtv= 0.5*np.sum(np.abs(new_pzeccx-pzeccx),axis=(0,1))
+		gnorm = np.linalg.norm(mean_grad,axis=(0,1))
+		#debug_error = gnorm
+		# FIXME: seems like gradient norm criterion gives better performance
+		#if np.all(np.array(dtv<conv_thres)):
+		if np.all(np.array(gnorm<conv_thres)):
+			conv_flag = True
+			break
+		else:
+			pzeccx = new_pzeccx
+	#print('final error',debug_error)
+	return {'pzeccx':pzeccx,'niter':itcnt,'conv':conv_flag}
 # compared algorithms
 '''
 def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):

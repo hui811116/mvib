@@ -172,7 +172,7 @@ def naiveConditionalStepSize(prob,update,target,init_step,scale):
 	stepsize = init_step
 	while np.any(prob+stepsize*update>target) or np.any(prob+stepsize*update<0):
 		stepsize *= scale
-		if stepsize < 1e-13:
+		if stepsize < 1e-11:
 			stepsize = 0
 			break
 	return stepsize

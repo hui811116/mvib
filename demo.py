@@ -58,8 +58,25 @@ alg_args  = {
 }
 algsel = alg.select(argsdict['method'])
 if argsdict['method'] != "complement":
+	# TWO STEP approach
 	algout = algsel(**{**alg_args,**sys_param})
 	pprint.pprint(algout)
+	if algout['conv']:
+		# run the complement view
+		# FIXME: debugging
+		#test_enc = np.array([[1,0.5,0],[0,0.5,1]])
+		#cmplout = alg.mvib_sv_cmpl(pxy_list[0],2,test_enc,0.08,1e-6,argsdict['maxiter'],**sys_param)
+		cmplout = alg.mvib_sv_cmpl(pxy_list[0],2,algout['pzcx_list'][0],0.06,1e-4,100000,**sys_param)
+		pprint.pprint(cmplout)
+		#testout = np.zeros((2,2,3))
+		#testout[:,:,0] = [[1,0],[0,0]]
+		#testout[:,:,1] = [[0,0.5],[0.5,0]]
+		#testout[:,:,2] = [[0,0],[0,1]]
+		#print(ut.calcMICmpl(testout*px_list[0][...,:]))
+		#print(ut.calcMICmpl(testout@pxy_list[0]))
+		print('IZeX|Zc',ut.calcMICmpl(cmplout['pzeccx']*px_list[0][...,:]))
+		print('IZeY|Zc',ut.calcMICmpl(cmplout['pzeccx']@pxy_list[0]))
+		#print("DEBUG",np.sum(cmplout['pzeccx'],axis=0))
 else:
 	cmpl_param = {
 		#"gamma_cmpl": gamma_vec[0],
