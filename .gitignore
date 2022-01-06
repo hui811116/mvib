@@ -133,3 +133,6 @@ dmypy.json
 
 # JSON
 *.json
+
+# PICKLE
+*.pkl

@@ -7,8 +7,8 @@ import sys
 # Object version of the function value and gradients
 def funcPzcxObj(gamma,px,pxcy,pcoeff):
 	def valObj(pzcx,pz,pzcy,mu_z,mu_zcy):
-		err_z = pz-np.sum(pzcx * px[None,:],axis=1)
-		err_zcy=pzcy -pzcx@pxcy
+		err_z = np.sum(pzcx * px[None,:],axis=1)-pz
+		err_zcy=pzcx@pxcy- pzcy
 		return -gamma * ut.calcCondEnt(pzcx,px)+np.sum(mu_z*err_z)+np.linalg.norm(err_z,2)**2 \
 				+np.sum(mu_zcy*err_zcy)+np.linalg.norm(err_zcy,2)**2
 	return valObj
@@ -16,17 +16,17 @@ def funcPzcxObj(gamma,px,pxcy,pcoeff):
 def gradPzcxObj(gamma,px,pxcy,pcoeff):
 	# note: this returns the raw gradient. might need additional processing to assure a probability dist.
 	def gradObj(pzcx,pz,pzcy,mu_z,mu_zcy):
-		err = pz - np.sum(pzcx * px[None,:],axis=1)
-		errzy = pzcy - pzcx @ pxcy
-		grad = gamma * (np.log(pzcx)+1)*px[None,:]-(mu_z+pcoeff*err)[:,None]*px[None,:]\
-				-(mu_zcy+pcoeff*(errzy))@pxcy.T
+		err = np.sum(pzcx * px[None,:],axis=1)-pz
+		errzy = pzcx @ pxcy - pzcy
+		grad = gamma * (np.log(pzcx)+1)*px[None,:]+(mu_z+pcoeff*err)[:,None]*px[None,:]\
+				+(mu_zcy+pcoeff*errzy)@pxcy.T
 		return grad
 	return gradObj
 
 # NOTE: the following returns Pz func, grad separately
 def funcPzObj(gamma_vec,px_list,pcoeff):
 	def valObj(pz,pzcx_list,muz_list):
-		errz_list = [pz-np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1) for i in range(len(px_list))]
+		errz_list = [np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1)-pz for i in range(len(px_list))]
 		errznorm2 = sum([np.linalg.norm(i,2)**2 for i in errz_list])
 		errzddot  = sum([np.dot(muz_list[i],errz_list[i]) for i in range(len(px_list))])
 		return (-1+np.sum(gamma_vec))*ut.calcEnt(pz)+errzddot+0.5*pcoeff*errznorm2
@@ -34,21 +34,21 @@ def funcPzObj(gamma_vec,px_list,pcoeff):
 
 def gradPzObj(gamma_vec,px_list,pcoeff):
 	def gradObj(pz,pzcx_list,muz_list):
-		errz_list = [pz-np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1) for i in range(len(px_list))]
-		return (1-np.sum(gamma_vec))*(np.log(pz)+1)+sum(muz_list)+pcoeff*sum(errz_list)
+		errz_list = [np.sum(pzcx_list[i]*(px_list[i])[None,:],axis=1)-pz for i in range(len(px_list))]
+		return (1-np.sum(gamma_vec))*(np.log(pz)+1)-sum(muz_list)-pcoeff*sum(errz_list)
 	return gradObj
 # NOTE: the following returns Pz|y func, grad separately
 def funcPzcyObj(pxcy_list,py,pcoeff):
 	def funcObj(pzcy,pzcx_list,muzcy_list):
-		errzcy_list = [pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))]
+		errzcy_list = [pzcx_list[i]@pxcy_list[i]-pzcy for i in range(len(pxcy_list))]
 		errzcynorm2 = sum([np.linalg.norm(i,2)**2 for i in errzcy_list])
 		errzcyddot = sum([np.sum(muzcy_list[i]*errzcy_list[i]) for i in range(len(pxcy_list))])
 		return ut.calcCondEnt(pzcy,py)+errzcyddot+0.5*pcoeff*errzcynorm2
 	return funcObj
 def gradPzcyObj(pxcy_list,py,pcoeff):
 	def gradObj(pzcy,pzcx_list,muzcy_list):
-		errzcy_list = [pzcy-pzcx_list[i]@pxcy_list[i] for i in range(len(pxcy_list))]
-		return -(np.log(pzcy)+1)*py[None,:]+sum(muzcy_list)+pcoeff*sum(errzcy_list)
+		errzcy_list = [pzcx_list[i]@pxcy_list[i]-pzcy for i in range(len(pxcy_list))]
+		return -(np.log(pzcy)+1)*py[None,:]-sum(muzcy_list)-pcoeff*sum(errzcy_list)
 	return gradObj
 
 # common-complement gradients
@@ -56,7 +56,7 @@ def gradPzcyObj(pxcy_list,py,pcoeff):
 #       and therefore introces extra proximal terms. Should be careful in handling the tensor gradients.
 # the Comn stands for the common information
 # the Cmpl stands for the complement information
-
+'''
 # NOTE: should involve complement view as well
 def gradPzcxComnObj(gamma,px,pxcy,pcoeff):
 	def gradObj(pzcx,pz,pzcy,pzeccx,mu_z,mu_zcy,mu_zec):
@@ -70,6 +70,7 @@ def gradPzcxComnObj(gamma,px,pxcy,pcoeff):
 	return gradObj
 
 # NOTE: involved common variables only
+
 def gradPzComnObj(gamma_vec,px_list,pcoeff):
 	def gradObj(pz,pzcx_list,muz_list):
 		errz_list = [np.sum(pzcx_list[idx]*(px_list[idx])[None,:],axis=1)-pz for idx in range(len(px_list))]
@@ -143,7 +144,7 @@ def maskGradPzcxCmplObj(gamma,px,pxcy,pycx,pcoeff,mask_thres):
 				gradout[...,idx][cmpl_mask[...,idx]]-= tmp_mean
 		return gradout
 	return gradObj
-
+'''
 
 # implement the naive step size search algorithm
 def naiveStepSize(prob,update,init_step,scale):
@@ -168,6 +169,7 @@ def armijoStepSize(prob,update,init_step,scale,c1,funcObj,gradObj,**kwargs):
 		fnex = funcObj(prob+stepsize*update,**kwargs)
 	return stepsize
 
+'''
 def naiveConditionalStepSize(prob,update,target,init_step,scale):
 	stepsize = init_step
 	while np.any(prob+stepsize*update>target) or np.any(prob+stepsize*update<0):
@@ -176,3 +178,4 @@ def naiveConditionalStepSize(prob,update,target,init_step,scale):
 			stepsize = 0
 			break
 	return stepsize
+'''

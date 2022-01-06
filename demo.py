@@ -19,12 +19,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('method',type=str,choices=alg.availableAlgs(),help="select the method")
 parser.add_argument('-thres',type=float,help='Convergence threshold',default=1e-5)
 parser.add_argument('-seed',type=int,help='Random Seed for Reproduction',default=None)
-parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=20000)
-parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default=4.0)
+parser.add_argument('-maxiter',type=int,help='Maximum number of iteration',default=50000)
+parser.add_argument('-penalty',type=float,help='The Penalty Coefficient',default=24.0)
 parser.add_argument('-ss_init',type=float,help='Initial value for step size search',default=5e-3)
 parser.add_argument('-ss_scale',type=float,help='Scaling value for step size search',default=0.25)
-parser.add_argument('-dataset',type=str,help='The dataset for simulation',default="syn2")
-parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.08,0.05")
+parser.add_argument('-dataset',type=str,help='The dataset for simulation',default="syn2_simple")
+parser.add_argument('-gamma',type=str,help='Gammas of each view, format:0.1,0.2,...',default="0.05,0.05")
 parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=25)
 
 # MACRO for Developing
@@ -52,51 +52,20 @@ py        = py_list[0]
 alg_args  = {
 	'pxy_list' : pxy_list,
 	'gamma_vec': gamma_vec,
-	'nz':data_dict['nz'],
+	'nz':len(py),
 	'convthres':argsdict['thres'],
 	'maxiter':argsdict['maxiter'],
 }
 algsel = alg.select(argsdict['method'])
-if argsdict['method'] != "complement":
-	# TWO STEP approach
-	algout = algsel(**{**alg_args,**sys_param})
-	pprint.pprint(algout)
-	if algout['conv']:
-		# run the complement view
-		# FIXME: debugging
-		#test_enc = np.array([[1,0.5,0],[0,0.5,1]])
-		#cmplout = alg.mvib_sv_cmpl(pxy_list[0],2,test_enc,0.08,1e-6,argsdict['maxiter'],**sys_param)
-		cmplout = alg.mvib_sv_cmpl(pxy_list[0],2,algout['pzcx_list'][0],0.06,1e-4,100000,**sys_param)
-		pprint.pprint(cmplout)
-		#testout = np.zeros((2,2,3))
-		#testout[:,:,0] = [[1,0],[0,0]]
-		#testout[:,:,1] = [[0,0.5],[0.5,0]]
-		#testout[:,:,2] = [[0,0],[0,1]]
-		#print(ut.calcMICmpl(testout*px_list[0][...,:]))
-		#print(ut.calcMICmpl(testout@pxy_list[0]))
-		print('IZeX|Zc',ut.calcMICmpl(cmplout['pzeccx']*px_list[0][...,:]))
-		print('IZeY|Zc',ut.calcMICmpl(cmplout['pzeccx']@pxy_list[0]))
-		#print("DEBUG",np.sum(cmplout['pzeccx'],axis=0))
-else:
-	cmpl_param = {
-		#"gamma_cmpl": gamma_vec[0],
-		"gamma_cmpl": 0.1,
-		"nzc": data_dict['nz'],
-		#"nze_vec":np.array([data_dict['nz']]*len(pxy_list)),   #FIXME: right now the same as nzc for basic result guarantee
-		"nze_vec":np.array([item.shape[0] for item in pxy_list]),
-	}
-	algout = algsel(**{**alg_args,**sys_param,**cmpl_param})
-	#print('sum pzeccx')
-	#print([np.sum(item,axis=(0,1)) for item in algout['pzcx_cmpl_list']])
-	pprint.pprint(algout)
-	mizx_cmpl = [ut.calcMICmpl(algout['pzcx_cmpl_list'][idx]*px_list[idx][...,:]) for idx in range(len(pxy_list))]
-	mizy_cmpl = [ut.calcMICmpl(algout['pzcx_cmpl_list'][idx]@pxy_list[idx]) for idx in range(len(pxy_list))]
-	pprint.pprint({'IZX_CMPL_list':mizx_cmpl,'IZY_CMPL_list':mizy_cmpl})
-# calculate mizx for each view
-mizx_list = [ut.calcMI(algout['pzcx_list'][idx] * px_list[idx][None,:]) for idx in range(len(pxy_list))]
-mizy = ut.calcMI(algout['pzcy'] *py[None,:])
+# FIXME: debugging, no output for now
+algsel(**{**alg_args,**sys_param})
 
 
-pprint.pprint({
-	'IXY_list':mixy_list,'IZX_list':mizx_list,'IZY':mizy,
-	'converged':algout['conv'],'num_iter':algout['niter']})
+# Now we should prepare a testbed for all kinds of multiview/single-view methods
+# the testing dataset should be fixed...
+
+# the testing data are in pickle format
+#{x_test:[num,nview], y_test:[num,label]} 
+
+# Now the goal is to set a unified testbed
+# each model predict things in its own way...
