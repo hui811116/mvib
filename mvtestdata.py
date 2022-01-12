@@ -50,7 +50,7 @@ for iv in range(argsdict['num']):
 fname = 'testdata_{}_num_{}.pkl'.format(argsdict['dataset'],argsdict['num'])
 savefile= os.path.join(d_base,fname)
 #print(x_sample)
-output_dict= {'x_test':x_sample,'y_test':y_label}
+output_dict= {'x_test':x_sample,'y_test':y_label.astype(int)}
 
 print('Saving testing data to: {}'.format(savefile))
 with open(savefile,'wb') as fid:

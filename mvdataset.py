@@ -8,11 +8,13 @@ def select(name):
 		return synTwoView()
 	elif name == 'syn1':
 		return synOneView()
+	elif name == 'syn2_inc':
+		return synTwoViewInc()
 	else:
 		sys.exit('[DATASET ERROR] No dataset named "{}" found.'.format(name))
 
 def getAvailableDataset():
-	return ['syn2','syn2_simple','syn1']
+	return ['syn2','syn2_simple','syn1','syn2_inc']
 
 def synTwoView():
 	py = np.array([0.5,0.5])
@@ -41,6 +43,18 @@ def synTwoView234():
 	pxy_v2 = pxcy_v2 * py[None,:]
 	return {'pxy_list':[pxy_v1,pxy_v2],'ny':len(py),'py':py}
 
+def synTwoViewInc():
+	py = np.array([1/3, 1/3, 1/3])
+	py/= np.sum(py)
+	pxcy_v1 = np.array([[0.90 ,0.20, 0.20],
+						[0.05 ,0.45, 0.35],
+						[0.05 ,0.35, 0.45]]) # clear for the first
+	pxcy_v2 = np.array([[0.25 ,0.10, 0.55],
+						[0.20 ,0.80, 0.25],
+						[0.55 ,0.10, 0.20]])# clear for the second
+	pxy_v1 = pxcy_v1 * py[None,:]
+	pxy_v2 = pxcy_v2 * py[None,:]
+	return {'pxy_list':[pxy_v1,pxy_v2],'ny':len(py),'py':py}
 def synOneView():
 	py = np.array([0.5,0.5])
 	pxcy = np.array([[0.85, 0.15],

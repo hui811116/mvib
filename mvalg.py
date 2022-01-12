@@ -19,14 +19,16 @@ def select(method):
 	#	return mvib_nv_avg
 	elif method == "inc":
 		return mvib_inc
+	elif method == "ba":
+		return ib_orig
 	else:
 		sys.exit("ERROR[mvalg]: selection failed, the method {} is undefined".format(method))
 def availableAlgs():
 	#return ['nview','parallel','mvavg','increment']
-	return ["cc","inc"]
+	return ["cc","inc",'ba']
 
 # A general n view ADMM IB
-def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
+def mvib_nv(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	pen_coeff = kwargs['penalty_coefficient']
 	gd_ss_init = kwargs['init_stepsize']
@@ -38,7 +40,7 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	# generate lists
 	px_list = [np.sum(i,axis=1) for i in pxy_list]
 	pxcy_list = [i/py[None,:] for i in pxy_list]
-
+	nz = np.amin([item.shape[0] for item in pxy_list]) # shrink the representation dimension to the min nx
 	# initialization
 	pzcx_list = [rs.rand(nz,i.shape[0]) for i in pxy_list]
 	# deterministic start
@@ -133,9 +135,11 @@ def mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 		pzcx_list = new_pzcx_list
 		pz = new_pz
 		pzcy = new_pzcy	
-	return {'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv}
+	mizx_list = [ut.calcMI(pzcx_list[i]*px_list[i][None,:]) for i in range(nview)]
+	mizy_list = [ut.calcMI(pzcx_list[i]@pxy_list[i]) for i in range(nview)]
+	return {'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv,'IXZ_list':mizx_list,'IYZ_list':mizy_list}
 
-def mvib_nv_avg(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
+def mvib_nv_avg(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	pen_coeff = kwargs['penalty_coefficient']
 	gd_ss_init = kwargs['init_stepsize']
@@ -147,7 +151,8 @@ def mvib_nv_avg(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	# generate lists
 	px_list = [np.sum(i,axis=1) for i in pxy_list]
 	pxcy_list = [i/py[None,:] for i in pxy_list]
-
+	#nz = np.amax([item.shape[0] for item in pxy_list]) # expand the representation dimension to the max nx
+	nz = np.amin([item.shape[0] for item in pxy_list]) # shrink the representation dimension to the min nx
 	# initialization
 	# FIXME: could set to deterministic method
 	pzcx_list = [rs.rand(nz,i.shape[0]) for i in pxy_list]
@@ -415,8 +420,8 @@ def mvib_sv_cmpl(pxy,ne,enc_pzcx,gamma,conv_thres,maxiter,**kwargs):
 	return {'pzeccx':pzeccx,'niter':itcnt,'conv':conv_flag}
 '''
 
-'''
-def mvib_sv_cmpl_type1(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
+
+def mvib_sv_cmpl_type1(pxy,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	# FIXME: fixed threshold
 	penc = kwargs['penalty_coefficient']
@@ -426,6 +431,7 @@ def mvib_sv_cmpl_type1(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	(nx,ny) = pxy.shape
 	nc = enc_pzcx.shape[0]
 	px = np.sum(pxy,axis=1)
+	ne = px.shape[0]
 	py = np.sum(pxy,axis=0)
 	pxcy = pxy/py[None,:]
 	pycx = (pxy/px[:,None]).T
@@ -475,7 +481,7 @@ def mvib_sv_cmpl_type1(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 		tmp_pzcy = var_pzcx @ pxcy
 		grad_x = gamma * (np.log(var_pzcx)+1) * const_pzc_x[None,:] \
 				- (np.log(tmp_pzcy)+1)@pxcy.T\
-				-(dual_z + penc * errz)[...,None] * const_errz_x
+				-((dual_z + penc * errz)/const_pzc[None,:])[...,None]*const_pzc_x[None,...]
 		
 		mean_grad_x = grad_x - np.mean(grad_x,axis=0)
 		ss_x= gd.naiveStepSize(var_pzcx,-mean_grad_x,ssinit,sscale)
@@ -492,11 +498,23 @@ def mvib_sv_cmpl_type1(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 		else:
 			var_pzcx = new_var_pzcx
 			var_pz = new_var_pz
+	errz = var_pz - np.sum(var_pzcx * const_pzc_x[None,...],axis=-1)/const_pzc[None,:]
+	dtvz = 0.5*np.sum(np.fabs(errz),axis=0)
+	# FIXME: debugging 
+	#print('residual:',errz)
+	#print('dtv:',dtvz)
+	joint_pzcx = var_pzcx * const_pzc_x[None,...]
+	joint_pzcy = (var_pzcx@ pxcy) * const_pzc_y[None,...]
+	tmp_var_pzcy = var_pzcx@pxcy
+	miczx = np.sum(joint_pzcx*np.log(var_pzcx/var_pz[...,None]))
+	miczy = np.sum(joint_pzcy*np.log(tmp_var_pzcy/var_pz[...,None]))
+	
+	return {'pzeccx':var_pzcx,'niter':itcnt,'conv':conv_flag,'IZCX':miczx,'IZCY':miczy}
 
-	return {'pzeccx':var_pzcx,'niter':itcnt,'conv':conv_flag}
-'''
+	#return {'pzeccx':var_pzcx,'niter':itcnt,'conv':conv_flag}
 
-def mvib_sv_cmpl_type2(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
+
+def mvib_sv_cmpl_type2(pxy,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	# FIXME: fixed threshold
 	penc = kwargs['penalty_coefficient']
@@ -506,28 +524,28 @@ def mvib_sv_cmpl_type2(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	(nx,ny) = pxy.shape
 	nc = enc_pzcx.shape[0]
 	px = np.sum(pxy,axis=1)
+	ne = px.shape[0]
 	py = np.sum(pxy,axis=0)
 	pxcy = pxy/py[None,:]
 	pycx = (pxy/px[:,None]).T
-
-	var_pzcx = rs.rand(ne,nc,nx)
-	var_pzcx /= np.sum(var_pzcx,axis=0)
-
-	var_pz = np.sum(var_pzcx * enc_pzcx[None,...] * px[...,:],axis=-1) / ((enc_pzcx@px)[None,:])
-	#print(var_pz.shape)
-	#print(np.sum(var_pz,axis=0))
-	var_pzcy = ((var_pzcx * enc_pzcx[None,...])@pxcy)/((enc_pzcx@pxcy)[None,...])
-	#print(np.sum(var_pzcy,axis=0))
-	#sys.exit()
-	# dual variables
-	dual_z = np.zeros((ne,nc))
-	dual_zy= np.zeros((ne,nc,ny))
 	# some constants
 	const_pzx = enc_pzcx * px[None,:]
 	const_pz  = enc_pzcx@px
 	const_pzy = enc_pzcx @ pxy
 	const_pzcy = enc_pzcx @ pxcy
-	const_grad_x= np.repeat(const_pzx[None,...],ne,axis=0)
+	#const_grad_x= np.repeat(const_pzx[None,...],ne,axis=0)
+	const_grad_x = const_pzx/const_pz[:,None]
+
+	var_pzcx = rs.rand(ne,nc,nx)
+	var_pzcx /= np.sum(var_pzcx,axis=0)
+
+	var_pz = np.sum(var_pzcx * enc_pzcx[None,...] * px[...,:],axis=-1) / const_pz[None,:]
+	var_pzcy = ((var_pzcx * enc_pzcx[None,...])@pxcy)/((enc_pzcx@pxcy)[None,...])
+	#var_pzcy = var_pzcx @ pxcy
+	# dual variables
+	dual_z = np.zeros((ne,nc))
+	dual_zy= np.zeros((ne,nc,ny))
+
 
 	itcnt =0 
 	conv_flag = False
@@ -536,9 +554,12 @@ def mvib_sv_cmpl_type2(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 		# type II
 		errz = np.sum(var_pzcx*const_pzx[None,...],axis=-1)/(const_pz[None,:]) - var_pz
 		errzy = ((var_pzcx * enc_pzcx[None,...])@pxcy)/((const_pzcy)[None,...]) - var_pzcy
+		#errzy = var_pzcx @ pxcy - var_pzcy
 		# -gamma_i H(Z_e|Z_c,X^i)
-		grad_x = gamma*(np.log(var_pzcx)+1)*const_pzx[None,...] +const_grad_x*(dual_z + penc*errz)[...,None]\
+		grad_x = gamma*(np.log(var_pzcx)+1)*const_pzx[None,...] +(dual_z + penc*errz)[...,None]*const_grad_x[None,...]\
 				+((dual_zy+penc*errzy)/const_pzcy[None,...])@pxcy.T * enc_pzcx[None,...]
+		#grad_x = gamma*(np.log(var_pzcx)+1)*const_pzx[None,...] +(dual_z + penc*errz)[...,None] * const_grad_x[None,...]\
+		#		+(dual_zy+penc*errzy)@pxcy.T
 		mean_grad_x = grad_x - np.mean(grad_x,axis=0)
 		ss_x = gd.naiveStepSize(var_pzcx,-mean_grad_x,ssinit,sscale)
 		if ss_x == 0:
@@ -547,6 +568,7 @@ def mvib_sv_cmpl_type2(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 		# (gamma-1) H(Z_e|Z_c)
 		errz = np.sum(new_var_pzcx*const_pzx[None,...],axis=-1)/(const_pz[None,:]) - var_pz
 		errzy = ((new_var_pzcx * enc_pzcx[None,...])@pxcy)/((const_pzcy)[None,...]) - var_pzcy
+		#errzy = new_var_pzcx @pxcy - var_pzcy
 		grad_z = (1-gamma) *(np.log(var_pz)+1)*const_pz[None,:] -(dual_z+penc*errz)
 		mean_grad_z = grad_z - np.mean(grad_z,axis=0)
 		ss_z = gd.naiveStepSize(var_pz,-mean_grad_z,ssinit,sscale)
@@ -562,6 +584,7 @@ def mvib_sv_cmpl_type2(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 		new_var_pzcy = var_pzcy - ss_y * mean_grad_y
 		errz = np.sum(new_var_pzcx*const_pzx[None,...],axis=-1)/(const_pz[None,:]) - new_var_pz
 		errzy = ((new_var_pzcx * enc_pzcx[None,...])@pxcy)/((const_pzcy)[None,...]) - new_var_pzcy
+		#errzy = new_var_pzcx @ pxcy - new_var_pzcy
 		# dual update
 		dual_z += penc * errz
 		dual_zy += penc*errzy
@@ -581,7 +604,8 @@ def mvib_sv_cmpl_type2(pxy,ne,enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	
 	return {'pzeccx':var_pzcx,'niter':itcnt,'conv':conv_flag,'IZCX':miczx,'IZCY':miczy}
 
-def mvib_cc(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
+def mvib_cc(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
+	d_retry = kwargs['retry']
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	nview = len(pxy_list)
 	py = np.sum(pxy_list[0],axis=0)
@@ -590,52 +614,73 @@ def mvib_cc(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	px_list = [np.sum(i,axis=1) for i in pxy_list]
 	pxcy_list = [i/py[None,:] for i in pxy_list]
 	# step 0: preparation, sort the MI 
-	mi_idx_sortlist = np.flip(np.argsort([ut.calcMI(i) for i in pxy_list])) # from greatest to smallest
-	error_flag = False
+	#mi_idx_sortlist = np.flip(np.argsort([ut.calcMI(i) for i in pxy_list])) # from greatest to smallest
 	# step 1: run the consensus step
-	outdict = mvib_nv_avg(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs)
-	#outdict = mvib_nv(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs)
+	#outdict = mvib_nv_avg(pxy_list,gamma_vec,convthres,maxiter,**kwargs)
+	#output:{'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv,'IXZ_list':mizx_list,'IYZ_list':mizy_list}
+	outdict = mvib_nv(pxy_list,gamma_vec,convthres,maxiter,**kwargs)
 	if not outdict['conv']:
 		# the algorithm diverged, we can either increase the penalty coefficient until convergence is assured
-		error_flag = True
 		print('ERROR:consensus failed')
-		return None
+		return {'conv':False}
 	# FIXME: debugging purpose
-	#debug_est_pzcx = outdict['pzcx_list']
-	#debug_est_mizx = [ut.calcMI(item*px_list[idx][None,:]) for idx,item in enumerate(debug_est_pzcx)]
-	#debug_est_mizy = [ut.calcMI(item@pxy_list[idx]) for idx,item in enumerate(debug_est_pzcx)]
-	#print('DEBUG: MIZX=',debug_est_mizx)
-	#print('DEBUG: MIZY=',debug_est_mizy)
-	print('LOG:consensus algorithm converged:')
-	print('MIZX:',outdict['IXZ_list'])
-	print('miZY:',outdict['IYZ_list'])
+	debug_est_pzcx = outdict['pzcx_list']
+	debug_est_mizx = [ut.calcMI(item*px_list[idx][None,:]) for idx,item in enumerate(debug_est_pzcx)]
+	debug_est_mizy = [ut.calcMI(item@pxy_list[idx]) for idx,item in enumerate(debug_est_pzcx)]
+	print('DEBUG: MIZX=',debug_est_mizx)
+	print('DEBUG: MIZY=',debug_est_mizy)
+	print('LOG:consensus algorithm converged in {:>5} iterations:'.format(outdict['niter']))
+	#print('MIZX:',outdict['IXZ_list'])
+	#print('MIZY:',outdict['IYZ_list'])
 	# step 2: run the complement step for the rest, in MI descending order
 	tmp_cmpl_list = []
-	for oidx, midx in enumerate(mi_idx_sortlist):
+	cmpl_izcx_list = []
+	cmpl_izcy_list = []
+	for midx in range(nview):
 		# FIXME
-		tmp_ne = pxy_list[midx].shape[0]
-		#cmpl_out = mvib_sv_cmpl_type1(pxy_list[midx],tmp_ne,outdict['pzcx_list'][midx],gamma_vec[midx],convthres,maxiter,**kwargs)
-		cmpl_out = mvib_sv_cmpl_type2(pxy_list[midx],tmp_ne,outdict['pzcx_list'][midx],gamma_vec[midx],convthres,maxiter,**kwargs)
-		if not cmpl_out['conv']:
-			error_flag = True
-			print('ERROR: view {:>5} failed'.format(midx))
-			break
+		inner_loop_conv =False
+		best_mic = -1.0
+		best_out = {}
+		for rn in range(d_retry):
+			#cmpl_out = mvib_sv_cmpl_type1(pxy_list[midx],outdict['pzcx_list'][midx],gamma_vec[midx],convthres,maxiter,**kwargs)
+			cmpl_out = mvib_sv_cmpl_type2(pxy_list[midx],outdict['pzcx_list'][midx],gamma_vec[midx],convthres,maxiter,**kwargs)
+			if not cmpl_out['conv']:
+				#error_flag = True
+				print('ERROR: view {:>5} failed (retry count:{:>3})'.format(midx,rn))
+				#return {'conv':False}
+			else:
+				if cmpl_out['IZCY']>best_mic:
+					best_mic = cmpl_out['IZCY']
+					best_out = copy.deepcopy(cmpl_out)
+				inner_loop_conv=True
+				print('LOG: view {:>5} converged (retry count:{:>3}): best_IYZC={:>10.5f}'.format(midx,rn,best_mic))
+		if not inner_loop_conv:
+			return {'conv':False}
 		else:
 			# FIXME: for debugging
-			print('LOG:complement view {:>5} converged: IXZC={:>10.4f}, IYZC={:>10.4f}'.format(midx,cmpl_out['IZCX'],cmpl_out['IZCY']))
-		tmp_cmpl_list.append(cmpl_out['pzeccx'])
+			print('LOG:complement view {:>5} converged: IXZC={:>10.4f}, IYZC={:>10.4f}'.format(midx,best_out['IZCX'],best_out['IZCY']))
+			tmp_cmpl_list.append(best_out['pzeccx'])
+			cmpl_izcx_list.append(best_out['IZCX'])
+			cmpl_izcy_list.append(best_out['IZCY'])
 	# put the complement encoders back to the order as in pxy_list
+	'''
 	est_list  =[None] * nview
-	if not error_flag:
-		for idx in range(nview):
-			est_list[mi_idx_sortlist[idx]] = tmp_cmpl_list[idx]
-		# FIXME: this log is for debugging purpose
-		print('LOG:convergence of mvib_cc reached!')
-	return None
-def mvib_inc(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
+	cmpl_mizx =[0.0] * nview
+	cmpl_mizy =[0.0] * nview
+	for idx in range(nview):
+		est_list[mi_idx_sortlist[idx]] = tmp_cmpl_list[idx]
+		cmpl_mizx[mi_idx_sortlist[idx]] = cmpl_izcx_list[idx]
+		cmpl_mizy[mi_idx_sortlist[idx]] = cmpl_izcy_list[idx]
+	'''
+	# FIXME: this log is for debugging purpose
+	print('LOG:convergence of mvib_cc reached!')
+	return {'con_enc':outdict['pzcx_list'],'cmpl_enc':tmp_cmpl_list,
+			'IXZ_list':outdict['IXZ_list'],'IYZ_list':outdict['IYZ_list'],
+			'IXZC_list':cmpl_izcx_list,'IYZC_list':cmpl_izcy_list,'conv':True}
+def mvib_inc(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	# NOTE: should think about the best value of nz
 	# assume the pxy is already sorted in descending order MI
-
+	d_retry = kwargs['retry']
 	# the tensor is expanding... how to handle it efficiently?
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	# assume py are all the same for each view's joint prob
@@ -648,52 +693,83 @@ def mvib_inc(pxy_list,gamma_vec,nz,convthres,maxiter,**kwargs):
 	# step 0: preparation, sort the MI 
 	mi_idx_sortlist = np.flip(np.argsort([ut.calcMI(i) for i in pxy_list])) # from greatest to smallest
 	pzcy_prior = None
-	error_flag = False
 	tmp_est_list =[]
+	tmp_dec_list =[]
+	mizx_list = []
+	mizy_list = []
 	for itcnt , midx in enumerate(mi_idx_sortlist):
 		if itcnt == 0:
 			# step 1: run a single BA
 			# the BA need "beta" instead of "gamma"
-			est_init = ib_orig(pxy_list[midx],nz,convthres,1/gamma_vec[midx],maxiter,**kwargs) # must converge
-			tmp_est_list.append(est_init['prob_zcx'])
-			pzcy_prior = est_init['prob_zcx'] @ pxcy_list[midx]
+			est_init = ib_orig(pxy_list[midx],convthres,gamma_vec[midx],maxiter,**kwargs) # must converge			
 			# must converge
 			if est_init['conv']:
 				print('LOG:incremental view {:>5} converged (BA)--IXZ={:>10.4f}, IYZ={:>10.4f}'.format(midx,est_init['IXZ'],est_init['IYZ']))
+				pzcy_prior = est_init['prob_zcx'] @ pxcy_list[midx] 
+				tmp_dec_list.append(pzcy_prior)
+				tmp_est_list.append(est_init['prob_zcx'])
+				mizx_list.append(est_init['IXZ'])
+				mizy_list.append(est_init['IYZ'])
+			else:
+				return {'conv':False}
 		else:
 			# step N: run the incremental model
-			est_out = mvib_inc_single_type2(pxy_list[midx],gamma_vec[midx],nz,convthres,maxiter,**{'prior_pzcy':pzcy_prior,**kwargs})
-			# could be divergent
-			if not est_out['conv']:
-				# how to handle non converging cases?
-				# could try some more time...
-				print('ERROR: view {:>5} failed'.format(midx))
-				error_flag = True
-				break
-			print("LOG:incremental view {:>5} converged--IXZ|Z'={:>10.4f}, IYZ|Z'={:>10.4f}".format(midx,est_out['IZCX'],est_out['IZCY']))
-			# accumulate the backward encoder
-			pzcy_prior = est_out['pzzcy'] # the backward encoder for next iteration # NOTE: is a joint probability
-			tmp_est_list.append(est_out['pzczx'])
-	if not error_flag:
-		# FIXME: for debugging purpose
-		print('LOG:incremental method converged!')
-		# put the encoders back in order
-		est_list  =[None]*nview
-		for idx in range(nview):
-			est_list[mi_idx_sortlist[idx]] = tmp_est_list[idx]
-	return None
+			#ne = pxy_list[midx].shape[0]
+			inner_loop_conv = False
+			best_out = {}
+			best_mic = 0.0
+			for rn in range(d_retry):
+				est_out = mvib_inc_single_type2(pxy_list[midx],gamma_vec[midx],convthres,maxiter,**{'prior_pzcy':pzcy_prior,**kwargs})
+				# could be divergent
+				if not est_out['conv']:
+					# how to handle non converging cases?
+					# could try some more time...
+					print('ERROR: view {:>5} failed (retry count:{:>3})'.format(midx,rn))
+					#return {'conv':False}
+				else:
+					if est_out['IZCY']>best_mic:
+						best_out = copy.deepcopy(est_out)
+						best_mic = est_out['IZCY']
+					inner_loop_conv=True
+					print('LOG: view {:>5} converged (retry count:{:>3}): best_IYZC={:>10.5f}'.format(midx,rn,best_mic))
+			if not inner_loop_conv:
+				return {'conv':False}
+			else:
+				print("LOG:incremental view {:>5} converged--IXZ|Z'={:>10.4f}, IYZ|Z'={:>10.4f}".format(midx,best_out['IZCX'],best_out['IZCY']))
+				# accumulate the backward encoder
+				pzcy_prior = best_out['pzzcy'] # the backward encoder for next iteration # NOTE: is a joint probability
+				tmp_est_list.append(best_out['pzczx']) # this is conditional marginal prob
+				tmp_dec_list.append(best_out['pzzcy']) # this is conditional joint prob
+				mizx_list.append(best_out['IZCX'])
+				mizy_list.append(best_out['IZCY'])
+
+	# FIXME: for debugging purpose
+	print('LOG:incremental method converged!')
+	# put the encoders back in order
+	est_list  =[None]*nview
+	dec_list  =[None]*nview
+	out_mizx_list =[0.0]*nview
+	out_mizy_list =[0.0]*nview
+	for idx in range(nview):
+		est_list[mi_idx_sortlist[idx]] = tmp_est_list[idx]
+		dec_list[mi_idx_sortlist[idx]] = tmp_dec_list[idx]
+		out_mizx_list[mi_idx_sortlist[idx]] = mizx_list[idx]
+		out_mizy_list[mi_idx_sortlist[idx]] = mizy_list[idx]
+	return {'conv':True,'enc_list':est_list,'dec_list':dec_list,
+			'IXZ_list':out_mizx_list,'IYZ_list':out_mizy_list}
 
 #def mvib_inc_single_type1(pxy,gamma,nz,convthres,maxiter,**kwargs):
 #	return None
 
 
-def mvib_inc_single_type2(pxy,gamma,nz,convthres,maxiter,**kwargs):
+def mvib_inc_single_type2(pxy,gamma,convthres,maxiter,**kwargs):
 	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
 	penc = kwargs['penalty_coefficient']
 	ssinit = kwargs['init_stepsize']
 	sscale = kwargs['stepsize_scale']
 	py = np.sum(pxy,axis=0)
 	px = np.sum(pxy,axis=1)
+	nz = px.shape[0]
 	pxcy = pxy / py[None,:]
 	pycx = (pxy/px[:,None]).T
 	(nx,ny) = pxcy.shape
@@ -793,16 +869,18 @@ def mvib_inc_single_type2(pxy,gamma,nz,convthres,maxiter,**kwargs):
 	return {'pzczx':var_pzcx,'pzzcy':out_backward_enc,'niter':itcnt,'conv':conv_flag,'IZCX':mic_zcx,'IZCY':mic_zcy}
 # compared algorithms
 
-def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):
+def ib_orig(pxy,convthres,gamma,maxiter,**kwargs):
+	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
+	beta = 1/gamma
 	(nx,ny) = pxy.shape
-	nz = qlevel
 	px = np.sum(pxy,axis=1)
+	nz = px.shape[0]
 	py = np.sum(pxy,axis=0)
 	pycx = np.transpose(np.diag(1./px)@pxy)
 	pxcy = pxy@np.diag(1./py)
 	# on IB, the initialization matters
 	# use random start (*This is the one used for v2)
-	pzcx = np.random.rand(nz,nx)
+	pzcx = rs.rand(nz,nx)
 	pzcx = pzcx * (1./np.sum(pzcx,axis=0))[None,:]
 	pz = pzcx @ px
 
@@ -811,7 +889,7 @@ def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):
 	# ready to start
 	itcnt = 0
 	conv_flag = False
-	while itcnt<max_iter:
+	while itcnt<maxiter:
 		# compute ib kernel
 		new_pzcx= np.zeros((nz,nx))
 		kl_oprod = np.expand_dims(1./pycz,axis=-1)@np.expand_dims(pycx,axis=1)
@@ -819,11 +897,11 @@ def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):
 		new_pzcx = np.diag(pz)@np.exp(-beta*kl_ker)
 
 		# standard way, normalize to be valid probability.
-		new_pzcx = new_pzcx@np.diag(1./np.sum(new_pzcx,axis=0))
+		new_pzcx /=np.sum(new_pzcx,axis=0)
 		itcnt+=1
 		# total variation convergence criterion
 		diff = 0.5* np.sum(np.fabs(new_pzcx-pzcx))
-		if diff < conv_thres:
+		if diff < convthres:
 			conv_flag = True
 			# reaching convergence
 			break
@@ -838,5 +916,3 @@ def ib_orig(pxy,qlevel,conv_thres,beta,max_iter,**kwargs):
 	mixz = ut.calcMI(pzcx*px[None,:])
 	miyz = ut.calcMI(pycz*pz[None,:])
 	return {'prob_zcx':pzcx,'prob_ycz':pycz,'niter':itcnt,'IXZ':mixz,'IYZ':miyz,'conv':conv_flag}
-
-

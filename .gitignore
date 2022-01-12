@@ -136,3 +136,9 @@ dmypy.json
 
 # PICKLE
 *.pkl
+
+# MATLAB
+*.mat
+*.m
+# TEXT
+*.txt
