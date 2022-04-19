@@ -228,7 +228,7 @@ for xdict,ydict in val_data:
 	test_kl_lossv1_tracker.update_state(kl_loss_v1)
 	test_kl_lossv2_tracker.update_state(kl_loss_v2)
 	test_loss_tracker.update_state(total_loss)
-print('TESTING: gamma={:>8.4f}, Accuracy={:>8.4f}, Total loss={:>8.4f}, KL_v1={:>8.4f}, KL_v2={:>8.4f}, CE={:8.4f}'.format(
+print('TESTING: gamma={:>8.4f}, Accuracy={:>8.4f}, Total loss={:>8.4f}, KL_v1={:>8.4f}, KL_v2={:>8.4f}, CE={:>8.4f}'.format(
 		gamma_v1,		
 		mvib.test_acc_tracker.result(), test_loss_tracker.result(),
 		test_kl_lossv1_tracker.result(),test_kl_lossv2_tracker.result(),

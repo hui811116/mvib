@@ -846,8 +846,8 @@ def mvib_inc_single_type2(pxy,gamma,convthres,maxiter,**kwargs):
 		# update the error again
 		errz = np.sum((const_grad_x_scalar)[None,...]*new_var_pzcx,axis=-1)/prior_pz[None,...] - new_var_pz
 		errzy = new_var_pzcx@pxcy - new_var_pzcy
-		dual_z += errz + penc*errz
-		dual_zy += errzy+ penc*errzy
+		dual_z +=  penc*errz
+		dual_zy +=  penc*errzy
 		# convergence criterion
 		convz = 0.5*np.sum(np.fabs(errz),axis=0)
 		convzy = 0.5*np.sum(np.fabs(errzy),axis=0)

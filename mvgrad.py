@@ -1,7 +1,8 @@
 import numpy as np
 import mvutils as ut
 import sys
-
+import tensorflow as tf
+from tensorflow.keras import layers
 
 # implemented as gradient descent algorithms
 # Object version of the function value and gradients
@@ -152,6 +153,15 @@ def naiveStepSize(prob,update,init_step,scale):
 	while np.any(prob+stepsize*update<=0.0) or np.any(prob+stepsize*update>=1.0):
 		stepsize *= scale
 		if stepsize< 1e-11:
+			stepsize = 0
+			break
+	return stepsize
+
+def tfNaiveSS(tfprob,update,init_step,scale):
+	stepsize = init_step
+	while tf.reduce_any(tfprob+update * stepsize<=0.0 ) or tf.reduce_any(tfprob+update*stepsize>=1.0):
+		stepsize*= scale
+		if stepsize<1e-11:
 			stepsize = 0
 			break
 	return stepsize
