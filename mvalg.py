@@ -767,12 +767,13 @@ def mvib_inc_single_type2(pxy,gamma,convthres,maxiter,**kwargs):
 	penc = kwargs['penalty_coefficient']
 	ssinit = kwargs['init_stepsize']
 	sscale = kwargs['stepsize_scale']
+	(nx,ny) = pxy.shape
 	py = np.sum(pxy,axis=0)
 	px = np.sum(pxy,axis=1)
 	nz = px.shape[0]
 	pxcy = pxy / py[None,:]
 	pycx = (pxy/px[:,None]).T
-	(nx,ny) = pxcy.shape
+	
 	# priors: p(z'|y), assume it is given, a tensor
 	prior_pzcy = kwargs['prior_pzcy']
 	prior_pz = np.sum(prior_pzcy*py[...,:],axis=-1)
