@@ -11,7 +11,7 @@ def tf_ib_orig(tf_pxy,gamma,convthres,maxiter,**kwargs):
 	(nx,ny) = tf_pxy.shape
 	tf_py = tf.reduce_sum(tf_pxy,axis=0)
 	tf_px = tf.reduce_sum(tf_pxy,axis=1)
-	nz = nx
+	nz = ny
 	pycx = tf.transpose(tf_pxy/tf_px[:,None])
 	pxcy = tf_pxy/tf_py[None,:]
 	tf_pzcx = tf.nn.softmax(tf.keras.backend.random_normal(shape=(nz,nx)),axis=0)
@@ -47,7 +47,7 @@ def tf_admmib_type1(tf_pxy,gamma,convthres,maxiter,**kwargs):
 	penalty = kwargs['penalty']
 	# first, using numpy to prepare the vectors and tensors
 	(nx,ny) = tf_pxy.shape
-	nz= nx
+	nz= ny
 	tf_px = tf.reduce_sum(tf_pxy,axis=1)
 	tf_py = tf.reduce_sum(tf_pxy,axis=0)
 	tf_pycx = tf.transpose(tf_pxy/tf_px[:,None])
@@ -106,10 +106,11 @@ def tf_mvcc_nv(tf_pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	#
 	tf_px_list  = [tf.reduce_sum(item,axis=1) for item in tf_pxy_list]
 	tf_pxcy_list = [item/tf_py[None,:] for item in tf_pxy_list]
-	nz = np.amin([item.shape[0] for item in tf_pxy_list])
+	#nz = np.amin([item.shape[0] for item in tf_pxy_list])
+	nz = ny
 	# initialization
 	tf_pzcx_list = [tf.nn.softmax(tf.keras.backend.random_normal(shape=(nz,item.shape[0]) ), axis=0) for item in tf_pxy_list]
-	tf_pz= 1/nview * sum([tf.squeeze(tf_pzcx_list[i]@tf_px_list[i][:,None]) for i in range(nview)])
+	tf_pz= 1/nview * sum([tf.reduce_sum(tf_pzcx_list[i]*tf_px_list[i][None,:],axis=1) for i in range(nview)])
 	tf_pz /= tf.reduce_sum(tf_pz)
 	tf_pzcy = 1/nview*sum([tf_pzcx_list[i]@tf_pxcy_list[i] for i in range(nview)])
 	# dual variables
@@ -119,13 +120,14 @@ def tf_mvcc_nv(tf_pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	itcnt = 0
 	flag_conv = False
 	# local functions
+
 	def tfGradPzcx(gamma,tfpx,tfpxcy,penalty,tfpzcx,tfpz,tfpzcy,tfdualz,tfdualzcy):
-		err = tf.squeeze(tfpzcx@tfpx[:,None])-tfpz
+		err = tf.reduce_sum(tfpzcx*tfpx[None,:],axis=1)-tfpz
 		errzy = tfpzcx@tfpxcy - tfpzcy
-		return gamma * (tf.math.log(tfpzcx)+1)*tfpx+(tfdualz+penalty * err)[:,None]*tfpx[None,:]\
+		return gamma * (tf.math.log(tfpzcx)+1)*tfpx[None,:]+(tfdualz+penalty * err)[:,None]*tfpx[None,:]\
 				+(tfdualzcy+penalty*errzy)@tf.transpose(tfpxcy)
 	def tfGradPz(gamma_vec,tfpx_list,penalty,tfpz,tfpzcx_list,dzlist):
-		errz_list = [tf.squeeze(tfpzcx_list[ii]@(tfpx_list[ii])[:,None])-tfpz for ii in range(nview)]
+		errz_list = [tf.reduce_sum(tfpzcx_list[ii]*tfpx_list[ii][None,:],axis=1)-tfpz for ii in range(nview)]
 		return (1-np.sum(gamma_vec))*(tf.math.log(tfpz)+1)-sum(dzlist)-penalty*sum(errz_list)
 	def tfGradPzcy(tfpxcy_list,tfpy,penalty,tfpzcy,tfpzcx_list,tfdualzcy_list):
 		errzcy_list = [tfpzcx_list[ii]@tfpxcy_list[ii]-tfpzcy for ii in range(nview)]
@@ -144,20 +146,20 @@ def tf_mvcc_nv(tf_pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 			mean_tmp_grad_pzcx = tmp_grad_pzcx - tf.reduce_mean(tmp_grad_pzcx,axis=0)[None,:]
 			ss_x = gd.tfNaiveSS(tf_pzcx_list[ii],-mean_tmp_grad_pzcx,ss_init,ss_scale)
 			if ss_x == 0:
-				#print('debugging: tfmvcc xstep failed')
+				#print('debugging: tfmvcc xstep failed. iter:{}'.format(itcnt))
 				_ss_interrupt=True
 				break
 			new_pzcx_list[ii] = tf_pzcx_list[ii] - ss_x*mean_tmp_grad_pzcx
 		if _ss_interrupt:
 			break
 		# update the augmented variable
-		grad_pz = tfGradPz(gamma_vec,tf_px_list,penalty,tf_pz,tf_pzcx_list,dz_list)
+		grad_pz = tfGradPz(gamma_vec,tf_px_list,penalty,tf_pz,new_pzcx_list,dz_list)
 		mean_grad_pz = grad_pz - tf.reduce_mean(grad_pz)
 		ss_z = gd.tfNaiveSS(tf_pz,-mean_grad_pz,ss_init,ss_scale)
 		if ss_z == 0:
 			#print('debugging: tfmvcc zstep failed')
 			break
-		grad_pzcy = tfGradPzcy(tf_pxcy_list,tf_py,penalty,tf_pzcy,tf_pzcx_list,dzcy_list)
+		grad_pzcy = tfGradPzcy(tf_pxcy_list,tf_py,penalty,tf_pzcy,new_pzcx_list,dzcy_list)
 		mean_grad_pzcy = grad_pzcy - tf.reduce_mean(grad_pzcy,axis=0)[None,:]
 		ss_y = gd.tfNaiveSS(tf_pzcy,-mean_grad_pzcy,ss_z,ss_scale)
 		if ss_y == 0:
@@ -166,14 +168,15 @@ def tf_mvcc_nv(tf_pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 		new_tfpz = tf_pz - ss_y * mean_grad_pz
 		new_tfpzcy = tf_pzcy - ss_y * mean_grad_pzcy
 		# dual updates
-		errz_list = [tf.squeeze(item@tf_px_list[idx][:,None])-new_tfpz for idx,item in enumerate(new_pzcx_list)]
+		errz_list = [tf.reduce_sum(item*tf_px_list[idx][None,:],axis=1)-new_tfpz for idx,item in enumerate(new_pzcx_list)]
 		errzcy_list = [item@tf_pxcy_list[idx]-new_tfpzcy for idx, item in enumerate(new_pzcx_list)]
 		dz_list = [item + penalty * errz_list[idx] for idx, item in enumerate(dz_list)]
 		dzcy_list = [item + penalty * errzcy_list[idx] for idx, item in enumerate(dzcy_list)]
 		# convergence criterion
-		conv_z_list = [0.5* tf.reduce_sum(tf.math.abs(item))<convthres for item in errz_list]
-		conv_zcy_list = [0.5*tf.reduce_sum(tf.math.abs(item),axis=0)<convthres for item in errzcy_list]
-		if tf.math.reduce_all(tf.convert_to_tensor(conv_z_list,dtype=bool)) and tf.math.reduce_all(tf.convert_to_tensor(conv_zcy_list,dtype=bool)):
+
+		conv_z_list = tf.convert_to_tensor([0.5* tf.reduce_sum(tf.math.abs(item)) for item in errz_list],dtype=tf.float32)
+		conv_zcy_list = tf.convert_to_tensor([0.5*tf.reduce_sum(tf.math.abs(item),axis=0) for item in errzcy_list],dtype=tf.float32)
+		if tf.math.reduce_all(conv_z_list<convthres) and tf.math.reduce_all(conv_zcy_list<convthres):
 			flag_conv = True
 			break
 		else:
@@ -183,7 +186,7 @@ def tf_mvcc_nv(tf_pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	mizx_list = [tf.reduce_sum(tf_pzcx_list[idx]*tf_px_list[idx][None,:]*tf.math.log(tf_pzcx_list[idx]/tf_pz[:,None])).numpy() for idx in range(nview)]
 	mizy_list = [tf.reduce_sum(tf_pzcx_list[idx]@tf_pxy_list[idx]*tf.math.log((tf_pzcx_list[idx]@tf_pxcy_list[idx])/tf_pz[:,None])).numpy() for idx in range(nview)]
 	return {'pzcx_list':tf_pzcx_list,'pz':tf_pz,'pzcy':tf_pzcy,'niter':itcnt,'conv':flag_conv,
-			'IXZ_list':mizx_list.numpy(),'IYZ_list':mizy_list.numpy()}
+			'IXZ_list':mizx_list,'IYZ_list':mizy_list}
 
 # simply copy need debugging
 def tf_mvcc_cmpl_type2(tf_pxy,tf_enc_pzcx,gamma,convthres,maxiter,**kwargs):
@@ -193,7 +196,8 @@ def tf_mvcc_cmpl_type2(tf_pxy,tf_enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	(nx,ny) = tf_pxy.shape
 	nc = tf_enc_pzcx.shape[0]
 	tf_px = tf.reduce_sum(tf_pxy,axis=1)
-	ne = tf_px.shape[0]
+	#ne = tf_px.shape[0]
+	ne = ny
 	tf_py = tf.reduce_sum(tf_pxy,axis=0)
 	tf_pxcy = tf_pxy / tf_py[None,:]
 	tf_pycx = tf.transpose(tf_pxy/tf_px[:,None])
@@ -278,7 +282,8 @@ def tf_inc_single_type2(tf_pxy,gamma,convthres,maxiter,**kwargs):
 	ss_scale = kwargs['ss_scale']
 	tf_py = tf.reduce_sum(tf_pxy,axis=0)
 	tf_px = tf.reduce_sum(tf_pxy,axis=1)
-	nz = tf_px.shape[0]
+	#nz = tf_px.shape[0]
+	nz = len(tf_py)
 	tf_pxcy = tf_pxy/ tf_py[None,:]
 	tf_pycx = tf.transpose(tf_pxy /tf_px[:,None])
 	(nx,ny) = tf_pxy.shape
@@ -360,14 +365,12 @@ def tf_inc_single_type2(tf_pxy,gamma,convthres,maxiter,**kwargs):
 
 
 # mvib mvcc_tf
-def tf_mvib_cc(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
+def tf_mvib_cc(tf_pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	d_retry = kwargs['retry']
-	nview = len(pxy_list)
-	py = np.sum(pxy_list[0],axis=0)
-	tf_py = tf.convert_to_tensor(py,dtype=tf.float32)
-	ny = len(py)
+	nview = len(tf_pxy_list)
+	tf_py = tf.reduce_sum(tf_pxy_list[0],axis=0)
+	ny = len(tf_py)
 
-	tf_pxy_list = [tf.convert_to_tensor(item,dtype=tf.float32) for item in pxy_list]
 	tf_px_list = [tf.reduce_sum(item,axis=1) for item in tf_pxy_list]
 	tf_pxcy_list = [item/tf_py[None,:] for item in tf_pxy_list]
 
@@ -377,6 +380,8 @@ def tf_mvib_cc(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 		print('ERROR:consensus failed')
 		return {'conv':False}
 	# debugging, print the learned MI
+	print('LOG:consensus step converged')
+	print(outdict['niter'],outdict['IXZ_list'],outdict['IYZ_list'])
 
 	tmp_cmpl_list = []
 	cmpl_izcx_list = []
