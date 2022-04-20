@@ -196,8 +196,8 @@ def tf_mvcc_cmpl_type2(tf_pxy,tf_enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	(nx,ny) = tf_pxy.shape
 	nc = tf_enc_pzcx.shape[0]
 	tf_px = tf.reduce_sum(tf_pxy,axis=1)
-	#ne = tf_px.shape[0]
-	ne = ny
+	ne = tf_px.shape[0]
+	#ne = ny
 	tf_py = tf.reduce_sum(tf_pxy,axis=0)
 	tf_pxcy = tf_pxy / tf_py[None,:]
 	tf_pycx = tf.transpose(tf_pxy/tf_px[:,None])
@@ -217,11 +217,6 @@ def tf_mvcc_cmpl_type2(tf_pxy,tf_enc_pzcx,gamma,convthres,maxiter,**kwargs):
 	dual_z = tf.zeros((ne,nc))
 	dual_zy = tf.zeros((ne,nc,ny))
 
-	# step size control
-	ss_cond = lambda x,g,si,ss,icnt: tf.reduce_any(tf.less_equal(x,0.0)) # continuing condition
-	ss_cond2= lambda x,g,si,ss,icnt: tf.reduce_any(tf.less_equal(1.0,x)) # continuing condition
-	dz_body = lambda x,g,si,ss,icnt: [x+g*si, g, si*ss, ss, icnt+1]
-
 	itcnt =0
 	conv_flag = False
 	while itcnt<maxiter:
@@ -231,31 +226,28 @@ def tf_mvcc_cmpl_type2(tf_pxy,tf_enc_pzcx,gamma,convthres,maxiter,**kwargs):
 		grad_x = gamma*(tf.math.log(tf_var_pzcx)+1)*tf_const_pzx[None,...]+(dual_z+penalty*errz)[...,None]*tf_const_grad_x[None,...]\
 				+((dual_zy+penalty*errzy)/tf_const_pzcy[None,...])@tf.transpose(tf_pxcy)*tf_enc_pzcx[None,...]
 		mean_grad_x = grad_x - tf.reduce_mean(grad_x,axis=0)
-		new_tf_var_pzcx = tf.identity(tf_var_pzcx)
-		x_out_list = tf.while_loop(ss_cond,dz_body,[new_tf_var_pzcx,-mean_grad_x,ss_init,ss_scale,0])
-		x_out_list2 = tf.while_loop(ss_cond2,dz_body,x_out_list[:-1]+[0])
-		if x_out_list2[-1] > 1000:
+		x_ss = gd.tfNaiveSS(tf_var_pzcx,-mean_grad_x,ss_init,ss_scale)
+		if x_ss == 0:
 			break
+		new_tf_var_pzcx = tf_var_pzcx -x_ss * mean_grad_x
 		# H(Z_e|Z_c)
-		errz = tf.reduce_sum(x_out_list2[0]*tf_const_pzx[None,...],axis=-1)/(tf_const_pz[None,:]) - tf_var_pz
-		errzy = ((x_out_list2[0]*tf_enc_pzcx[None,...])@tf_pxcy)/((tf_const_pzcy)[None,...]) - tf_var_pzcy
+		errz = tf.reduce_sum(new_tf_var_pzcx*tf_const_pzx[None,...],axis=-1)/(tf_const_pz[None,:]) - tf_var_pz
+		errzy = ((new_tf_var_pzcx*tf_enc_pzcx[None,...])@tf_pxcy)/((tf_const_pzcy)[None,...]) - tf_var_pzcy
 
 		grad_z = (1-gamma)*(tf.math.log(tf_var_pz)+1)*tf_const_pz[None,:]-(dual_z+penalty*errz)
 		mean_grad_z=  grad_z - tf.reduce_mean(grad_z,axis=0)
-		new_tf_var_pz = tf.identity(tf_var_pz)
-		z_out_list = tf.while_loop(ss_cond,dz_body,[new_tf_var_pz,-mean_grad_z,ss_init,ss_scale,0])
-		z_out_list2 = tf.while_loop(ss_cond2,dz_body,z_out_list[:-1]+[0])
-		if z_out_list2[-1]>1000:
+		z_ss = gd.tfNaiveSS(tf_var_pz,-mean_grad_z,ss_init,ss_scale)
+		if z_ss == 0:
 			break
 		grad_y = -(tf.math.log(tf_var_pzcy))*tf_const_pzy[None,...] - (dual_zy+penalty*errzy)
 		mean_grad_y = grad_y - tf.reduce_mean(grad_y,axis=0)
-		new_tf_var_pzcy = tf.identity(tf_var_pzcy)
-		y_out_list = tf.while_loop(ss_cond,dz_body,[new_tf_var_pzcy,-mean_grad_y,z_out_list2[2],ss_scale,0])
-		y_out_list2 = tf.while_loop(ss_cond2,dz_body,y_out_list[:-1]+[0])
-		if y_out_list2[-1]>1000:
+		y_ss = gd.tfNaiveSS(tf_var_pzcy,-mean_grad_y,z_ss,ss_scale)
+		if y_ss ==0:
 			break
-		errz = tf.reduce_sum(x_out_list2[0]*tf_const_pzx[None,...],axis=-1)/(tf_const_pz[None,...]) - z_out_list2[0]
-		errzy = ((x_out_list2[0] * tf_enc_pzcx[None,...])@tf_pxcy)/((tf_const_pzcy)[None,...]) - y_out_list2[0]
+		new_tf_var_pz = tf_var_pz - mean_grad_z*z_ss
+		new_tf_var_pzcy = tf_var_pzcy -mean_grad_y * y_ss
+		errz = tf.reduce_sum(new_tf_var_pzcx*tf_const_pzx[None,...],axis=-1)/(tf_const_pz[None,...]) - new_tf_var_pz
+		errzy = ((new_tf_var_pzcx * tf_enc_pzcx[None,...])@tf_pxcy)/((tf_const_pzcy)[None,...]) - new_tf_var_pzcy
 
 		dual_z += penalty * errz
 		dual_zy += penalty * errzy
@@ -265,9 +257,9 @@ def tf_mvcc_cmpl_type2(tf_pxy,tf_enc_pzcx,gamma,convthres,maxiter,**kwargs):
 			conv_flag = True
 			break
 		else:
-			tf_var_pzcx = x_out_list2[0]
-			tf_var_pz = z_out_list2[0]
-			tf_var_pzcy = y_out_list2[0]
+			tf_var_pzcx = new_tf_var_pzcx
+			tf_var_pz = new_tf_var_pz
+			tf_var_pzcy = new_tf_var_pzcy
 	joint_pzcx = tf_var_pzcx * tf_const_pzx[None,...]
 	joint_pzcy = tf_var_pzcy * tf_const_pzy[None,...]
 	miczx = tf.reduce_sum(joint_pzcx * tf.math.log(tf_var_pzcx/tf_var_pz[...,None]))

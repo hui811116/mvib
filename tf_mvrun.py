@@ -52,13 +52,13 @@ sys_param = {'ss_init':ss_init,'ss_scale':ss_scale,'retry':retry_num,'penalty':p
 #tf_mvnv_out = alg.tf_mvcc_nv(tf_pxy_list,gamma_vec,convthres,maxiter,**sys_param)
 #print(tf_mvnv_out['conv'],tf_mvnv_out['niter'],tf_mvnv_out['IXZ_list'],tf_mvnv_out['IYZ_list'])
 
-'''
+
 mv_outdict = alg.tf_mvib_cc(tf_pxy_list,gamma_vec,convthres,maxiter,**sys_param)
 if mv_outdict['conv']:
 	print(mv_outdict['conv'],mv_outdict['IXZC_list'],mv_outdict['IYZC_list'])
 else:
 	print('mv divergent')
-'''
+
 # NOTE: first-round debugging complete
 #ba_out= alg.tf_ib_orig(tf_pxy_list[1],gamma_vec[1],convthres,maxiter,**sys_param)
 #print(ba_out['conv'],ba_out['IXZ'],ba_out['IYZ'],ba_out['niter'])
@@ -67,12 +67,10 @@ else:
 #print(admmib_out['conv'],admmib_out['IZX'],admmib_out['IZY'],admmib_out['niter'])
 # NOTE: first-round debugging complete
 
+'''
 inc_outdict=  alg.tf_mvib_inc(tf_pxy_list,gamma_vec,convthres,maxiter,**sys_param)
 if inc_outdict['conv']:
 	print(inc_outdict['conv'],inc_outdict['IXZ_list'],inc_outdict['IYZ_list'])
 else:
 	print('inc divergent')
-
-
-
-
+'''
