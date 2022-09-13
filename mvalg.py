@@ -21,11 +21,13 @@ def select(method):
 		return mvib_inc
 	elif method == "ba":
 		return ib_orig
+	elif method == "var_2v":
+		return varinf_ba2v
 	else:
 		sys.exit("ERROR[mvalg]: selection failed, the method {} is undefined".format(method))
 def availableAlgs():
 	#return ['nview','parallel','mvavg','increment']
-	return ["cc","inc",'ba']
+	return ["cc","inc",'ba','var_2v']
 
 # A general n view ADMM IB
 def mvib_nv(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
@@ -917,3 +919,124 @@ def ib_orig(pxy,convthres,gamma,maxiter,**kwargs):
 	mixz = ut.calcMI(pzcx*px[None,:])
 	miyz = ut.calcMI(pycz*pz[None,:])
 	return {'prob_zcx':pzcx,'prob_ycz':pycz,'niter':itcnt,'IXZ':mixz,'IYZ':miyz,'conv':conv_flag}
+
+
+def varinf_ba2v(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
+	# this approach is a variational method
+	# update the encoder and decoder in an alternating fashion
+	# this reference approach only support 2 views for now
+	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
+	pxy_v1 = pxy_list[0]
+	pxy_v2 = pxy_list[1]
+	px_v1 = np.sum(pxy_v1,axis=1)
+	pxcy_v1 = pxy_v1 / px_v1[:,None]
+
+	py = np.sum(pxy_v1,axis=0)
+	ny = len(py)
+	(nx_v1, _) = pxy_v1.shape
+	(nx_v2, _) = pxy_v2.shape
+	
+	px_v2 = np.sum(pxy_v2,axis=1)
+	pxcy_v2 = pxy_v2 / px_v2[:,None]
+
+	pycx_v1 = (pxy_v1/py[None,:]).T
+	pycx_v2 = (pxy_v2/py[None,:]).T
+
+	gamma_v1 = gamma_vec[0]
+	gamma_v2 = gamma_vec[1]
+	
+	nz_v1 = nx_v1
+	nz_v2 = nx_v2
+	
+	pzcx_v1 = rs.rand(nx_v1,nx_v1)
+	pzcx_v1 /= np.sum(pzcx_v1,axis=0)
+	pzcx_v2 = rs.rand(nx_v2,nx_v2)
+	pzcx_v2 /= np.sum(pzcx_v2,axis=0)
+	pz_v1 = pzcx_v1 @ px_v1
+	pz_v2 = pzcx_v2 @ px_v2
+
+	# variational parameters
+	qzcy_v1 = pzcx_v1 @ pxcy_v1
+	qzcy_v2 = pzcx_v2 @ pxcy_v2
+	qz_v1 = pzcx_v1 @ px_v1
+	qz_v2 = pzcx_v2 @ px_v2
+	qyz12 = py[:,...] * np.expand_dims(qzcy_v1.T,axis=-1) * np.expand_dims(qzcy_v2.T,axis=1)
+	print(np.sum(qyz12)) # =1.5?????
+	sys.exit()
+	qz12 = np.sum(qyz12,axis=0)
+	qy_cz12 = qyz12 / np.sum(qyz12,axis=0)
+
+	itcnt = 0
+	conv_flag = False
+	while itcnt< maxiter:
+		itcnt+=1
+		# prepare decoders
+		pzcy_v1 = pzcx_v1 @ pxcy_v1
+		pzcy_v2 = pzcx_v2 @ pxcy_v2
+		# calculate the kl kernel
+		ker_v1 = np.zeros((nz_v1,nx_v1))
+		for idxz1 in range(nz_v1):
+			for idxx1 in range(nx_v1):
+				tmpsum1 = 0
+				tmpsum2 = 0
+				for idxz2 in range(nx_v2):
+					for idxy in range(ny):
+						tmpsum1 += pycx_v1[idxy,idxx1]*pzcy_v2[idxz2,idxy]*np.log(qy_cz12[idxy,idxz1,idxz2])
+						tmpsum2 += pycx_v1[idxy,idxx1]*pzcy_v2[idxz2,idxy]*np.log(qz12[idxz1,idxz2])
+				ker_v1[idxz1,idxx1] = 1/gamma_v1 * tmpsum1 + tmpsum2
+		new_pzcx_v1 = np.exp(ker_v1)
+		new_pzcx_v1 /= np.sum(new_pzcx_v1,axis=0)
+		ker_v2 = np.zeros((nz_v2,nx_v2))
+		for idxz2 in range(nz_v2):
+			for idxx2 in range(nx_v2):
+				tmpsum1 = 0
+				tmpsum2 = 0
+				for idxz1 in range(nx_v1):
+					for idxy in range(ny):
+						tmpsum1 += pycx_v2[idxy,idxx2]*pzcy_v1[idxz1,idxy]*np.log(qy_cz12[idxy,idxz1,idxz2])
+						tmpsum2 += pycx_v2[idxy,idxx2]*pzcy_v1[idxz1,idxy]*np.log(qz12[idxz1,idxz2])
+				ker_v2[idxz2,idxx2] = 1/gamma_v2*tmpsum1 + (gamma_v1/gamma_v2)*tmpsum2+np.log(qz_v2[idxz2])-(gamma_v1/gamma_v2)*np.log(pz_v2[idxz2])
+		new_pzcx_v2 = np.exp(ker_v2)
+		new_pzcx_v2 /= np.sum(new_pzcx_v2,axis=0)
+		# update the variational probabilities
+		new_pz_v1 = new_pzcx_v1 @ px_v1
+		new_pzcy_v1 = new_pzcx_v1 @ pxcy_v1
+
+		new_pz_v2 = new_pzcx_v2 @ px_v2
+		new_pzcy_v2 = new_pzcx_v2 @ pxcy_v2
+
+		new_pyz12 = py[:,...] * np.expand_dims(new_pzcy_v1.T,axis=-1) * np.expand_dims(new_pzcy_v2.T,axis=1)
+
+		new_pz12 = np.sum(new_pyz12,axis=0)
+
+		# convergence check
+		dtv1 = np.sum(np.fabs(new_pzcx_v1- pzcx_v1),axis=0)
+		dtv2 =np.sum(np.fabs(new_pzcx_v2 - pzcx_v2),axis=0)
+		if np.all(dtv1<convthres) and np.all(dtv2<convthres):
+			conv_flag = True
+			break
+		else:
+			# copy the update for next round
+			pzcx_v1 = new_pzcx_v1
+			pzcx_v2 = new_pzcx_v2
+			pz_v1 = new_pz_v1
+			pz_v2 = new_pz_v2
+			# permutation to store the variational approximation
+			qyz12 = new_pyz12
+			qz12 = new_pz12
+			qy_cz12 = qyz12 / np.sum(qyz12,axis=0)
+	# calculate I(Y;Z_1,Z_2), from q(y,z1,z2)
+	print("joint yz12:",np.sum(qy_cz12,axis=0))
+	mi_yz12 = 0
+	for yidx in range(ny):
+		for z1idx in range(nz_v1):
+			for z2idx in range(nz_v2):
+				mi_yz12 += qyz12[yidx,z1idx,z2idx] * np.log(qy_cz12[yidx,z1idx,z2idx]/py[yidx])	
+	# calculate I(X_1;Z_1), from pzcx_v1
+	mizx_v1 = np.sum(pzcx_v1*px_v1[None,:] * np.log(pzcx_v1/pz_v1[:,None]))
+	# calculate I(X_2;Z_2), from pzcx_v2
+	mizx_v2 = np.sum(pzcx_v2*px_v2[None,:] * np.log(pzcx_v2/pz_v2[:,None]))
+	enc_list= [pzcx_v1, pzcx_v2]
+	mizx_list = [mizx_v1,mizx_v2]
+	# compute the mutual information required for comparison
+	return {'conv':conv_flag,'enc_list':enc_list,'niter':itcnt,'IXZ_list':mizx_list,'IZCY':mi_yz12}

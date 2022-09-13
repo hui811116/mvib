@@ -45,7 +45,7 @@ penalty_min = 32.0
 penalty_max = 96.0
 penalty_step = 32.0
 
-agg_on = True
+agg_on = False
 
 gamma_range = np.geomspace(gamma_min,gamma_max,gamma_num)
 penalty_range =np.arange(penalty_min,penalty_max+1,penalty_step)
@@ -283,4 +283,15 @@ elif argsdict['method'] == "cc":
 	cc_template = 'mvcc_{}_acc_{}.mat'
 	saveBaResult(cc_template,cc_res,res_hdr,**argsdict)
 
+elif argsdict['method'] == "var_2v":
+	# FIXME: debugging
+	gamma_vec = np.array([0.1, 0.1])
+	out_dict = alg.varinf_ba2v(**{'gamma_vec':gamma_vec,**alg_args,**sys_param})
+	if out_dict['conv']:
+		print('varinf_2v converged')
+		print("iterations:",out_dict['niter'])
+		print("IXZ:",out_dict['IXZ_list'])
+		print("IZCY:",out_dict['IZCY'])
+	else:
+		print('varinf_2v diverged')
 
