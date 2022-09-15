@@ -746,7 +746,7 @@ def mvib_cc_revised(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 			cmpl_izcx_list.append(best_out['IZCX'])
 			cmpl_izcy_list.append(best_out['IZCY'])
 	# put the complement encoders back to the order as in pxy_list
-	'''
+
 	est_list  =[None] * nview
 	cmpl_mizx =[0.0] * nview
 	cmpl_mizy =[0.0] * nview
@@ -754,7 +754,7 @@ def mvib_cc_revised(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 		est_list[mi_idx_sortlist[idx]] = tmp_cmpl_list[idx]
 		cmpl_mizx[mi_idx_sortlist[idx]] = cmpl_izcx_list[idx]
 		cmpl_mizy[mi_idx_sortlist[idx]] = cmpl_izcy_list[idx]
-	'''
+
 	# FIXME: this log is for debugging purpose
 	print('LOG:convergence of mvib_cc reached!')
 	return {'con_enc':outdict['pzcx_list'],'cmpl_enc':tmp_cmpl_list,
