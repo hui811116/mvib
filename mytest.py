@@ -267,6 +267,115 @@ class mvCcFullTest:
 
 		return y_est.astype(int)
 
+
+class mvCcReviseTest:
+	def __init__(self,cons_enc_list,cmpl_enc_list,pxy_list,**kwargs):
+		# focus on two view problems
+		assert len(pxy_list) == 2
+		self.rs  = 	RandomState(MT19937(SeedSequence(kwargs['seed'])))
+		nx_list = [item.shape[0] for item in pxy_list]
+		px_list = [np.sum(item,axis=1) for item in pxy_list]
+		py = np.sum(pxy_list[0],axis=0)
+		self.py = py
+		pxcy_list = [item/py[None,:] for item in pxy_list]
+		# compute joint prior first
+		prior_ycx1x2 = np.zeros((len(py),nx_list[0],nx_list[1]))
+		prior_x1x2   = np.zeros((nx_list[0],nx_list[1]))
+		for ix1 in range(nx_list[0]):
+			for ix2 in range(nx_list[1]):
+				tmp_sum = 0
+				for iy in range(len(py)):
+					tmp_sum += py[iy] * pxcy_list[0][ix1,iy] * pxcy_list[1][ix2,iy]
+				prior_x1x2[ix1,ix2] = tmp_sum
+		prior_x1x2 /= np.sum(prior_x1x2)
+		# ycx1x2
+		for ix1 in range(nx_list[0]):
+			for ix2 in range(nx_list[1]):
+				for iy in range(len(py)):
+					prior_ycx1x2[iy,ix1,ix2] = py[iy] * pxcy_list[0][ix1,iy] * pxcy_list[1][ix2,iy] / prior_x1x2[ix1,ix2]
+		prior_ycx1x2/= np.sum(prior_ycx1x2,axis=0)
+		# 
+		cons_enc_v1 = cons_enc_list[0]
+		nz = cons_enc_v1.shape[0]
+		cons_enc_v2 = cons_enc_list[1]
+		assert nz == cons_enc_v2.shape[0]
+		
+		con_pzy = cons_enc_v1@pxy_list[0] # this should be the same for the two
+		con_pzcy = cons_enc_v1@pxcy_list[0]
+		con_pz = cons_enc_v1@px_list[0] # this is also the same for the two
+		cmpl_enc_v1 = cmpl_enc_list[0]
+		cmpl_enc_v2 = cmpl_enc_list[1]
+
+		joint_pzx_v1 = cons_enc_v1 * (px_list[0])[None,:]
+		joint_pzx_v2 = cons_enc_v2 * (px_list[1])[None,:]
+		cmpl_dec_v1 = ((cmpl_enc_v1 * cons_enc_v1[None,...])@pxcy_list[0])/ con_pzcy[None,...]
+		cmpl_dec_v2 = ((cmpl_enc_v2 * cons_enc_v2[None,...])@pxcy_list[1])/ con_pzcy[None,...]
+
+		tmp_cmpl_dec = np.zeros((py.shape[0],cmpl_enc_v1.shape[0],cmpl_enc_v2.shape[0],nz)) # only one consensus
+		for iy in range(py.shape[0]):
+			for ize1 in range(cmpl_enc_v1.shape[0]):
+				for ize2 in range(cmpl_enc_v2.shape[0]):
+					for izc in range(nz):
+						tmp_cmpl_dec[iy,ize1,ize2,izc] = py[iy] * con_pzcy[izc,iy] * cmpl_dec_v1[ize1,izc,iy]* cmpl_dec_v2[ize2,izc,iy]
+		tmp_cmpl_dec/= np.sum(tmp_cmpl_dec,axis=0)
+		# compute the joint encoder
+		tmp_con_enc = np.zeros((nz,nx_list[0],nx_list[1]))
+		'''
+		for iz in range(nz):
+			for ix1 in range(cmpl_enc_v1.shape[0]):
+				for ix2 in range(cmpl_enc_v2.shape[1]):
+					tmp_sum = 0
+					for iy in range(len(py)):
+						tmp_sum += prior_ycx1x2[iy,ix1,ix2] * con_pzcy[iz,iy]
+					tmp_con_enc[iz,ix1,ix2] = tmp_sum
+		tmp_con_enc/=np.sum(tmp_con_enc,axis=0)
+		'''
+		for iz in range(nz):
+			for ix1 in range(nx_list[0]):
+				for ix2 in range(nx_list[1]):
+					tmp_norm = 0
+					for sz in range(nz):
+						tmp_norm += cons_enc_v1[sz,ix1] * cons_enc_v2[sz,ix2]
+					tmp_con_enc[iz,ix1,ix2] = cons_enc_v1[sz,ix1] * cons_enc_v2[sz,ix2] / tmp_norm
+		tmp_con_enc/=np.sum(tmp_con_enc,axis=0)
+		
+		# zc consensus is an design parameter...
+		est_pycx = np.zeros((py.shape[0],nx_list[0],nx_list[1]))#y, x1, x2
+		for iy in range(py.shape[0]):
+			for ix1 in range(nx_list[0]):
+				for ix2 in range(nx_list[1]):
+					tmp_sum =0
+					for ize1 in range(cmpl_enc_v1.shape[0]):# ne must match
+						for ize2 in range(cmpl_enc_v2.shape[0]):
+							for izc in range(cons_enc_v1.shape[0]):
+								# should be forced to the same consensus
+								tmp_sum += tmp_cmpl_dec[iy,ize1,ize2,izc] * cmpl_enc_v1[ize1,izc,ix1] * cmpl_enc_v2[ize2,izc,ix2] * tmp_con_enc[izc,ix1,ix2]
+					est_pycx[iy,ix1,ix2] = tmp_sum
+		est_pycx /= np.sum(est_pycx,axis=0)
+		self.estz_pycx = est_pycx
+		
+	def test(self,x_test,y_test):
+		# x_test is in [x0,x1] order
+		num = x_test.shape[0]
+		y_raw = self.rs.rand(num)
+
+		cumap = np.cumsum(self.estz_pycx,axis=0)
+		y_est = np.zeros(num)
+
+		for nn in range(num):
+			y_idx = -1
+			for iy in range(len(self.py)):
+				ctuple = tuple([iy]+list(x_test[nn]))
+				if y_raw[nn]<cumap[ctuple]:
+					y_idx = iy
+					break
+			if y_idx==-1:
+				print('ERROR:no prediction found')
+				sys.exit()
+			y_est[nn] = y_idx
+
+		return y_est.astype(int)
+
 '''
 class mvIncTest:
 	def __init__(self,enc_list,pxy_list,**kwargs):

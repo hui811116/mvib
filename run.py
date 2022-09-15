@@ -30,7 +30,7 @@ parser.add_argument('-dataset',type=str,help='The dataset for simulation',defaul
 parser.add_argument('-gamma_min',type=float,help="the minimum gamma for grid search",default=0.05)
 parser.add_argument('-gamma_max',type=float,help="the maximum gamma for grid search",default=1.0)
 parser.add_argument('-ngamma',type=int,help="Spacing of the gamma grid",default=16)
-parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=50)
+parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=10)
 parser.add_argument('-retry',type=int,help='Retry for each internal solver',default=10)
 
 # MACRO for Developing
@@ -267,7 +267,8 @@ elif argsdict['method'] == "cc":
 			for nn in range(argsdict['niter']):
 				mv_outdict = alg.mvib_cc(**{'penalty_coefficient':penc,'gamma_vec':gamma_vec,**alg_args,**sys_param})
 				if mv_outdict['conv']:
-					mvcc_test = mt.mvCcFullTest(mv_outdict['con_enc'],mv_outdict['cmpl_enc'],pxy_list,**argsdict)
+					#mvcc_test = mt.mvCcFullTest(mv_outdict['con_enc'],mv_outdict['cmpl_enc'],pxy_list,**argsdict)
+					mvcc_test = mt.mvCcReviseTest(mv_outdict['con_enc'],mv_outdict['cmpl_enc'],pxy_list,**argsdict)
 					y_cc_est = mvcc_test.test(x_test_nv,y_test)
 					test_acc = np.sum(np.equal(y_test,y_cc_est))/y_test.shape[0]
 					print('MV-cc: gamma_v1={:>6.3f}, gamma_v2={:>6.3f}, Accuracy={:>6.3f}'.format(gamma_v1,gamma_v2,test_acc*100))

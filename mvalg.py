@@ -679,6 +679,89 @@ def mvib_cc(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	return {'con_enc':outdict['pzcx_list'],'cmpl_enc':tmp_cmpl_list,
 			'IXZ_list':outdict['IXZ_list'],'IYZ_list':outdict['IYZ_list'],
 			'IXZC_list':cmpl_izcx_list,'IYZC_list':cmpl_izcy_list,'conv':True}
+'''
+def mvib_cc_revised(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
+	d_retry = kwargs['retry']
+	rs = RandomState(MT19937(SeedSequence(kwargs['rand_seed'])))
+	nview = len(pxy_list)
+	py = np.sum(pxy_list[0],axis=0)
+	ny = len(py)
+	# generate lists
+	px_list = [np.sum(i,axis=1) for i in pxy_list]
+	pxcy_list = [i/py[None,:] for i in pxy_list]
+	# step 0: preparation, sort the MI 
+	#mi_idx_sortlist = np.flip(np.argsort([ut.calcMI(i) for i in pxy_list])) # from greatest to smallest
+	# step 1: run the consensus step
+	#outdict = mvib_nv_avg(pxy_list,gamma_vec,convthres,maxiter,**kwargs)
+	#output:{'pzcx_list':pzcx_list,'pz':pz,'pzcy':pzcy,'niter':itcnt,'conv':flag_conv,'IXZ_list':mizx_list,'IYZ_list':mizy_list}
+	outdict = mvib_nv(pxy_list,gamma_vec,convthres,maxiter,**kwargs)
+	if not outdict['conv']:
+		# the algorithm diverged, we can either increase the penalty coefficient until convergence is assured
+		print('ERROR:consensus failed')
+		return {'conv':False}
+	# FIXME: debugging purpose
+	debug_est_pzcx = outdict['pzcx_list']
+	debug_est_mizx = [ut.calcMI(item*px_list[idx][None,:]) for idx,item in enumerate(debug_est_pzcx)]
+	debug_est_mizy = [ut.calcMI(item@pxy_list[idx]) for idx,item in enumerate(debug_est_pzcx)]
+	print('DEBUG: MIZX=',debug_est_mizx)
+	print('DEBUG: MIZY=',debug_est_mizy)
+	print('LOG:consensus algorithm converged in {:>5} iterations:'.format(outdict['niter']))
+	#print('MIZX:',outdict['IXZ_list'])
+	#print('MIZY:',outdict['IYZ_list'])
+	# FIXME: 
+	# no more complement step, treated as inc with side information
+	# TODO:
+	# preprocess the equivalent priors
+	# put zc in the end seems more convenient
+	# p(z1,zc) = p(z1|zc)p(zc)
+	# p(z1,zc|y) = p(z1|zc,y)p(zc|y)
+	for midx in range(nview):
+		# FIXME
+		inner_loop_conv =False
+		best_mic = -1.0
+		best_out = {}
+		for rn in range(d_retry):
+			# TODO:
+			# put inc step here
+			# compute the pzcy piror
+			prior_pzcy = # TODO
+			# NOTE: the first step should be easy, as it is simply the inc step 1
+			est_out = mvib_inc_single_type2(pxy_list[midx],gamma_vec[midx],convthres,maxiter,**{'prior_pzcy',prior_pzcy,**kwargs})
+			if not est_out['conv']:
+				#error_flag = True
+				print('ERROR: view {:>5} failed (retry count:{:>3})'.format(midx,rn))
+				#return {'conv':False}
+			else:
+				if est_out['IZCY']>best_mic:
+					best_mic = est_out['IZCY']
+					best_out = copy.deepcopy(est_out)
+				inner_loop_conv=True
+				print('LOG: view {:>5} converged (retry count:{:>3}): best_IYZC={:>10.5f}'.format(midx,rn,best_mic))
+		if not inner_loop_conv:
+			return {'conv':False}
+		else:
+			# FIXME: for debugging
+			print('LOG:complement view {:>5} converged: IXZC={:>10.4f}, IYZC={:>10.4f}'.format(midx,best_out['IZCX'],best_out['IZCY']))
+			tmp_cmpl_list.append(best_out['pzeccx'])
+			cmpl_izcx_list.append(best_out['IZCX'])
+			cmpl_izcy_list.append(best_out['IZCY'])
+	# put the complement encoders back to the order as in pxy_list
+	'''
+	est_list  =[None] * nview
+	cmpl_mizx =[0.0] * nview
+	cmpl_mizy =[0.0] * nview
+	for idx in range(nview):
+		est_list[mi_idx_sortlist[idx]] = tmp_cmpl_list[idx]
+		cmpl_mizx[mi_idx_sortlist[idx]] = cmpl_izcx_list[idx]
+		cmpl_mizy[mi_idx_sortlist[idx]] = cmpl_izcy_list[idx]
+	'''
+	# FIXME: this log is for debugging purpose
+	print('LOG:convergence of mvib_cc reached!')
+	return {'con_enc':outdict['pzcx_list'],'cmpl_enc':tmp_cmpl_list,
+			'IXZ_list':outdict['IXZ_list'],'IYZ_list':outdict['IYZ_list'],
+			'IXZC_list':cmpl_izcx_list,'IYZC_list':cmpl_izcy_list,'conv':True}
+'''
+
 def mvib_inc(pxy_list,gamma_vec,convthres,maxiter,**kwargs):
 	# NOTE: should think about the best value of nz
 	# assume the pxy is already sorted in descending order MI
