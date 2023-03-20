@@ -30,7 +30,7 @@ parser.add_argument('-dataset',type=str,help='The dataset for simulation',defaul
 parser.add_argument('-gamma_min',type=float,help="the minimum gamma for grid search",default=0.05)
 parser.add_argument('-gamma_max',type=float,help="the maximum gamma for grid search",default=1.0)
 parser.add_argument('-ngamma',type=int,help="Spacing of the gamma grid",default=16)
-parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=10)
+parser.add_argument('-niter',type=int,help='Number of iterations per gamma vectors',default=25)
 parser.add_argument('-retry',type=int,help='Retry for each internal solver',default=10)
 
 # MACRO for Developing
